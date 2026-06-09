@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= pageTitle %></title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <% if (typeof includeChartJs !== "undefined" && includeChartJs) { %>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <% } %>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: "#0f172a",
+            mist: "#f8fbff",
+            line: "#dbe4f0",
+            brand: "#2563eb",
+            brandDark: "#1d4ed8",
+            brandSoft: "#eff6ff",
+            paper: "#f8fbff",
+            accent: "#2563eb"
+          },
+          boxShadow: {
+            soft: "0 20px 45px rgba(15, 23, 42, 0.08)",
+            panel: "0 24px 60px rgba(37, 99, 235, 0.10)"
+          }
+        }
+      }
+    };
+  </script>
+  <% if (typeof extraHead !== "undefined" && extraHead) { %>
+    <%- extraHead %>
+  <% } %>
+</head>
+<body class="<%= bodyClass || 'bg-[#f8fbff] text-slate-900' %>">
