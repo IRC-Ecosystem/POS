@@ -33,6 +33,31 @@ PREPARE stmt FROM @users_add_nama;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+CREATE TABLE IF NOT EXISTS `api_integrations` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `provider` ENUM('smartbank', 'api-gateway', 'umkm-insight') NOT NULL,
+  `name` VARCHAR(150) NOT NULL,
+  `method` ENUM('GET', 'POST', 'PUT', 'DELETE') NOT NULL DEFAULT 'GET',
+  `base_url` VARCHAR(255) NOT NULL,
+  `path` VARCHAR(255) NOT NULL,
+  `headers_json` JSON NULL,
+  `query_json` JSON NULL,
+  `body_json` JSON NULL,
+  `expected_status` INT NOT NULL DEFAULT 200,
+  `description` TEXT NULL,
+  `status` ENUM('untested', 'ok', 'failed') NOT NULL DEFAULT 'untested',
+  `last_checked_at` DATETIME NULL,
+  `last_response_code` INT NULL,
+  `last_response_body` MEDIUMTEXT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_api_integrations_provider` (`provider`),
+  KEY `idx_api_integrations_status` (`status`),
+  KEY `idx_api_integrations_active` (`provider`, `is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET @users_add_phone = (
   SELECT IF(
     EXISTS (

@@ -24,7 +24,8 @@ app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  skip: (req) => req.get("x-warungpos-health-check") === "internal"
 }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());

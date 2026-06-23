@@ -1,9 +1,554 @@
 const TransactionModel = require("../models/transactionModel");
+const ApiIntegrationModel = require("../models/apiIntegrationModel");
 const { createObjectCsvStringifier } = require("csv-writer");
 const PDFDocument = require("pdfkit");
+const fs = require("fs");
+const path = require("path");
 
 const ALLOWED_FILTERS = ["today", "week", "month", "all"];
 const RECENT_TRANSACTIONS_PER_PAGE = 6;
+const API_ENDPOINTS = [
+  { method: "GET", path: "/", purpose: "Landing page atau redirect dashboard sesuai role jika sudah login.", direction: "authRoutes -> static index.html / role redirect", access: "Publik", response: "HTML" },
+  { method: "GET", path: "/login", purpose: "Menampilkan halaman login.", direction: "authController.showLogin", access: "Publik", response: "HTML" },
+  { method: "POST", path: "/login", purpose: "Memvalidasi email/password dan membuat session user.", direction: "authController.login", access: "Publik", response: "Redirect / HTML error" },
+  { method: "GET", path: "/register", purpose: "Menampilkan form registrasi akun konsumen.", direction: "authController.showRegister", access: "Publik", response: "HTML" },
+  { method: "POST", path: "/register", purpose: "Membuat akun baru dengan role konsumen.", direction: "authController.register", access: "Publik", response: "Redirect / HTML error" },
+  { method: "POST", path: "/logout", purpose: "Menghapus session login.", direction: "authController.logout", access: "Login", response: "Redirect" },
+  { method: "GET", path: "/manager", purpose: "Dashboard KPI, grafik penjualan, transaksi terbaru, dan monitor kasir.", direction: "managerController.index", access: "Manager", response: "HTML" },
+  { method: "GET", path: "/manager/api-integrator", purpose: "Menampilkan halaman dokumentasi endpoint ala Swagger.", direction: "managerController.apiIntegrator", access: "Manager", response: "HTML" },
+  { method: "GET", path: "/manager/api-integrator/local", purpose: "Menampilkan dokumentasi endpoint lokal POS.", direction: "managerController.localApiIntegrator", access: "Manager", response: "HTML" },
+  { method: "GET", path: "/manager/api-integrator/:provider", purpose: "Menampilkan halaman pengelolaan endpoint API eksternal sesuai provider.", direction: "managerController.providerApiIntegrator", access: "Manager", response: "HTML" },
+  { method: "GET", path: "/manager/api-spec.json", purpose: "Mengambil dokumentasi endpoint dalam format JSON mirip OpenAPI.", direction: "managerController.exportApiSpec", access: "Manager", response: "JSON" },
+  { method: "GET", path: "/manager/api-health.json", purpose: "Mengecek status route API: GET dites aman, POST divalidasi terdaftar tanpa dieksekusi.", direction: "managerController.checkApiHealth", access: "Manager", response: "JSON" },
+  { method: "GET", path: "/manager/export/csv", purpose: "Mengunduh laporan transaksi sesuai filter periode dalam format CSV.", direction: "managerController.exportCsv", access: "Manager", response: "CSV download" },
+  { method: "GET", path: "/manager/export/pdf", purpose: "Mengunduh laporan transaksi sesuai filter periode dalam format PDF.", direction: "managerController.exportPdf", access: "Manager", response: "PDF download" },
+  { method: "GET", path: "/operator", purpose: "Dashboard manajemen produk dan inventory.", direction: "operatorController.index", access: "Operator", response: "HTML" },
+  { method: "POST", path: "/operator/products", purpose: "Menambah produk baru.", direction: "operatorController.createProduct", access: "Operator", response: "Redirect" },
+  { method: "POST", path: "/operator/products/:id/update", purpose: "Mengubah data produk berdasarkan ID.", direction: "operatorController.updateProduct", access: "Operator", response: "Redirect" },
+  { method: "POST", path: "/operator/products/:id/stock", purpose: "Mengubah stok produk berdasarkan ID.", direction: "operatorController.updateStock", access: "Operator", response: "Redirect" },
+  { method: "POST", path: "/operator/products/:id/delete", purpose: "Menghapus produk berdasarkan ID.", direction: "operatorController.deleteProduct", access: "Operator", response: "Redirect" },
+  { method: "GET", path: "/kasir", purpose: "Dashboard kasir untuk direct sale, approval pesanan, pembayaran, dan ringkasan transaksi.", direction: "kasirController.index", access: "Kasir", response: "HTML" },
+  { method: "GET", path: "/kasir/receipt/:id", purpose: "Menampilkan struk transaksi kasir berdasarkan ID transaksi.", direction: "kasirController.receipt", access: "Kasir", response: "HTML" },
+  { method: "POST", path: "/kasir/direct-sale", purpose: "Membuat transaksi langsung oleh kasir dan langsung memotong stok.", direction: "kasirController.createDirectSale", access: "Kasir", response: "Redirect" },
+  { method: "POST", path: "/kasir/approve/:id", purpose: "Menyetujui transaksi konsumen berstatus pending.", direction: "kasirController.approveTransaction", access: "Kasir", response: "Redirect" },
+  { method: "POST", path: "/kasir/reject/:id", purpose: "Menolak transaksi konsumen berstatus pending.", direction: "kasirController.rejectTransaction", access: "Kasir", response: "Redirect" },
+  { method: "POST", path: "/kasir/pay/:id", purpose: "Memproses pembayaran transaksi approved dan mengubah status menjadi paid.", direction: "kasirController.payTransaction", access: "Kasir", response: "Redirect" },
+  { method: "POST", path: "/pos/pembayaran", purpose: "API simulasi pembayaran SmartBank untuk transaksi approved.", direction: "kasirController.smartBankPayment", access: "Kasir", response: "JSON" },
+  { method: "GET", path: "/konsumen", purpose: "Katalog produk, filter produk, dan cart konsumen.", direction: "konsumenController.index", access: "Konsumen", response: "HTML" },
+  { method: "GET", path: "/konsumen/profile", purpose: "Menampilkan profil konsumen.", direction: "konsumenController.profile", access: "Konsumen", response: "HTML" },
+  { method: "POST", path: "/konsumen/profile", purpose: "Mengubah nama, email, dan nomor telepon konsumen.", direction: "konsumenController.updateProfile", access: "Konsumen", response: "Redirect / HTML error" },
+  { method: "POST", path: "/konsumen/profile/password", purpose: "Mengubah password konsumen.", direction: "konsumenController.updatePassword", access: "Konsumen", response: "Redirect / HTML error" },
+  { method: "GET", path: "/konsumen/history", purpose: "Menampilkan riwayat transaksi konsumen.", direction: "konsumenController.history", access: "Konsumen", response: "HTML" },
+  { method: "GET", path: "/konsumen/waiting/:invoice", purpose: "Menampilkan status approval/pembayaran transaksi berdasarkan invoice.", direction: "konsumenController.waitingApproval", access: "Konsumen", response: "HTML" },
+  { method: "GET", path: "/konsumen/receipt/:invoice", purpose: "Menampilkan struk transaksi paid berdasarkan invoice.", direction: "konsumenController.receipt", access: "Konsumen", response: "HTML" },
+  { method: "GET", path: "/konsumen/receipt/:invoice/download", purpose: "Mengunduh struk transaksi paid dalam format PDF.", direction: "konsumenController.downloadReceipt", access: "Konsumen", response: "PDF download" },
+  { method: "POST", path: "/konsumen/cart/:id/add", purpose: "Menambahkan produk ke cart session konsumen.", direction: "konsumenController.addToCart", access: "Konsumen", response: "Redirect" },
+  { method: "POST", path: "/konsumen/cart/:id/qty", purpose: "Menambah atau mengurangi jumlah item di cart.", direction: "konsumenController.updateCartQuantity", access: "Konsumen", response: "Redirect" },
+  { method: "POST", path: "/konsumen/cart/:id/remove", purpose: "Menghapus item dari cart.", direction: "konsumenController.removeFromCart", access: "Konsumen", response: "Redirect" },
+  { method: "POST", path: "/konsumen/checkout", purpose: "Membuat transaksi pending dari isi cart konsumen.", direction: "konsumenController.checkout", access: "Konsumen", response: "Redirect" }
+];
+
+const ROUTES_DIR = path.join(__dirname, "..", "routes");
+const metadataByEndpoint = new Map(API_ENDPOINTS.map((endpoint) => [`${endpoint.method}:${endpoint.path}`, endpoint]));
+const EXTERNAL_API_PROVIDERS = {
+  smartbank: {
+    key: "smartbank",
+    name: "SmartBank",
+    description: "Kelola endpoint pembayaran, status pembayaran, refund, dan callback bank.",
+    tone: "from-blue-600 to-sky-500",
+    sampleEndpoints: [
+      { name: "Create Payment", method: "POST", path: "/v2/payments/create", status: "Belum dicek" },
+      { name: "Check Payment Status", method: "GET", path: "/v2/payments/{invoice}", status: "Belum dicek" }
+    ]
+  },
+  "api-gateway": {
+    key: "api-gateway",
+    name: "API Gateway",
+    description: "Kelola endpoint penghubung antar sistem, routing, autentikasi, dan relay data.",
+    tone: "from-slate-800 to-slate-600",
+    sampleEndpoints: [
+      { name: "Forward Transaction", method: "POST", path: "/gateway/transactions", status: "Belum dicek" }
+    ]
+  },
+  "umkm-insight": {
+    key: "umkm-insight",
+    name: "UMKM Insight",
+    description: "Kelola endpoint analitik, laporan performa usaha, insight produk, dan sinkronisasi data.",
+    tone: "from-emerald-600 to-teal-500",
+    sampleEndpoints: [
+      { name: "Sync Sales Insight", method: "POST", path: "/insight/sales/sync", status: "Belum dicek" },
+      { name: "Product Recommendation", method: "GET", path: "/insight/products/recommendation", status: "Belum dicek" }
+    ]
+  }
+};
+
+const parseOptionalJsonInput = (value, fieldLabel) => {
+  if (!value || !String(value).trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    const validationError = new Error(`${fieldLabel} harus berupa JSON valid.`);
+    validationError.isValidationError = true;
+    throw validationError;
+  }
+};
+
+const normalizeExternalApiInput = (providerKey, body) => {
+  const name = body.name ? body.name.trim() : "";
+  const method = body.method ? body.method.trim().toUpperCase() : "";
+  const baseUrl = body.base_url ? body.base_url.trim().replace(/\/+$/, "") : "";
+  const apiPath = body.path ? body.path.trim() : "";
+  const expectedStatus = Number(body.expected_status || 200);
+
+  if (!name) {
+    throw Object.assign(new Error("Nama endpoint wajib diisi."), { isValidationError: true });
+  }
+
+  if (!["GET", "POST", "PUT", "DELETE"].includes(method)) {
+    throw Object.assign(new Error("Method endpoint tidak valid."), { isValidationError: true });
+  }
+
+  if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) {
+    throw Object.assign(new Error("Base URL wajib diawali http:// atau https://."), { isValidationError: true });
+  }
+
+  if (!apiPath || !apiPath.startsWith("/")) {
+    throw Object.assign(new Error("Path wajib diawali dengan /."), { isValidationError: true });
+  }
+
+  if (!Number.isInteger(expectedStatus) || expectedStatus < 100 || expectedStatus > 599) {
+    throw Object.assign(new Error("Expected status harus angka HTTP 100-599."), { isValidationError: true });
+  }
+
+  return {
+    provider: providerKey,
+    name,
+    method,
+    base_url: baseUrl,
+    path: apiPath,
+    headers_json: parseOptionalJsonInput(body.headers_json, "Headers JSON"),
+    query_json: parseOptionalJsonInput(body.query_json, "Query JSON"),
+    body_json: parseOptionalJsonInput(body.body_json, "Request Body JSON"),
+    expected_status: expectedStatus,
+    description: body.description ? body.description.trim() : ""
+  };
+};
+
+const redirectProvider = (providerKey) => `/manager/api-integrator/${providerKey}`;
+
+const setFlash = (req, payload) => {
+  req.session.flash = payload;
+};
+
+const normalizeAccess = (handlerSource) => {
+  const roleMatch = handlerSource.match(/requireRole\(["']([^"']+)["']\)/);
+  if (roleMatch) {
+    return roleMatch[1].charAt(0).toUpperCase() + roleMatch[1].slice(1);
+  }
+
+  if (handlerSource.includes("requireAuth")) {
+    return "Login";
+  }
+
+  return "Publik";
+};
+
+const inferResponseType = (method, routePath) => {
+  if (routePath.endsWith(".json") || routePath.includes("/api") || routePath === "/pos/pembayaran") {
+    return "JSON";
+  }
+
+  if (routePath.includes("/export/csv")) {
+    return "CSV download";
+  }
+
+  if (routePath.includes("/export/pdf") || routePath.includes("/download")) {
+    return "PDF download";
+  }
+
+  return method === "GET" ? "HTML" : "Redirect";
+};
+
+const discoverRouteEndpoints = () => {
+  if (!fs.existsSync(ROUTES_DIR)) {
+    return [];
+  }
+
+  return fs.readdirSync(ROUTES_DIR)
+    .filter((fileName) => fileName.endsWith(".js"))
+    .flatMap((fileName) => {
+      const routeSource = fs.readFileSync(path.join(ROUTES_DIR, fileName), "utf8");
+      const routeMatches = [...routeSource.matchAll(/router\.(get|post)\(\s*["'`]([^"'`]+)["'`]\s*,([\s\S]*?)\);/g)];
+
+      return routeMatches.map((match) => {
+        const method = match[1].toUpperCase();
+        const routePath = match[2];
+        const handlerSource = match[3];
+        const controllerMatches = [...handlerSource.matchAll(/([A-Za-z0-9_]+Controller\.[A-Za-z0-9_]+)/g)];
+        const direction = controllerMatches.length > 0
+          ? controllerMatches[controllerMatches.length - 1][1]
+          : `${fileName} inline handler`;
+        const metadata = metadataByEndpoint.get(`${method}:${routePath}`) || {};
+
+        return {
+          method,
+          path: routePath,
+          purpose: metadata.purpose || `Endpoint ${method} ${routePath}. Tambahkan metadata untuk deskripsi lebih detail.`,
+          direction: metadata.direction || direction,
+          access: metadata.access || normalizeAccess(handlerSource),
+          response: metadata.response || inferResponseType(method, routePath),
+          sourceFile: fileName,
+          autoDiscovered: true
+        };
+      });
+    })
+    .sort((left, right) => {
+      if (left.path === right.path) {
+        return left.method.localeCompare(right.method);
+      }
+      return left.path.localeCompare(right.path);
+    });
+};
+
+const getApiGroup = (path) => {
+  if (path === "/" || path === "/login" || path === "/register" || path === "/logout") {
+    return "Auth";
+  }
+
+  const segment = path.split("/").filter(Boolean)[0] || "Root";
+  return segment.charAt(0).toUpperCase() + segment.slice(1);
+};
+
+const getApiQueryParams = (path) => {
+  if (path === "/manager") {
+    return [
+      { name: "filter", type: "string", required: false, example: "all", description: "Pilihan: today, week, month, all." },
+      { name: "recentPage", type: "number", required: false, example: "1", description: "Halaman daftar transaksi terbaru." }
+    ];
+  }
+
+  if (path === "/manager/export/csv" || path === "/manager/export/pdf") {
+    return [
+      { name: "filter", type: "string", required: false, example: "month", description: "Pilihan: today, week, month, all." }
+    ];
+  }
+
+  if (path === "/konsumen") {
+    return [
+      { name: "search", type: "string", required: false, example: "kopi", description: "Kata kunci nama produk." },
+      { name: "kategori", type: "string", required: false, example: "Minuman", description: "Filter kategori produk." },
+      { name: "page", type: "number", required: false, example: "1", description: "Halaman katalog produk." }
+    ];
+  }
+
+  return [];
+};
+
+const getApiPathParams = (path) => {
+  const matches = path.match(/:([A-Za-z0-9_]+)/g) || [];
+  return matches.map((match) => {
+    const name = match.slice(1);
+    return {
+      name,
+      type: name === "invoice" ? "string" : "number",
+      required: true,
+      example: name === "invoice" ? "INV17100000000001234" : "1",
+      description: `Nilai path parameter ${name}.`
+    };
+  });
+};
+
+const getApiBodyFields = (method, path) => {
+  if (method !== "POST") {
+    return [];
+  }
+
+  const bodyMap = {
+    "/login": [
+      { name: "email", type: "string", required: true, example: "manager@warungpos.test", description: "Email akun." },
+      { name: "password", type: "string", required: true, example: "admin123", description: "Password akun." }
+    ],
+    "/register": [
+      { name: "nama", type: "string", required: true, example: "Budi", description: "Nama konsumen." },
+      { name: "email", type: "string", required: true, example: "budi@test.com", description: "Email konsumen." },
+      { name: "password", type: "string", required: true, example: "secret123", description: "Password minimal 6 karakter." },
+      { name: "confirmPassword", type: "string", required: true, example: "secret123", description: "Konfirmasi password." }
+    ],
+    "/operator/products": [
+      { name: "nama_produk", type: "string", required: true, example: "Es Teh Manis", description: "Nama produk." },
+      { name: "harga", type: "number", required: true, example: "8000", description: "Harga jual." },
+      { name: "stock", type: "number", required: true, example: "25", description: "Jumlah stok." },
+      { name: "kategori", type: "string", required: true, example: "Minuman", description: "Kategori produk." },
+      { name: "gambar", type: "string", required: false, example: "https://example.com/image.jpg", description: "URL gambar produk." }
+    ],
+    "/operator/products/:id/update": [
+      { name: "nama_produk", type: "string", required: true, example: "Es Teh Lemon", description: "Nama produk baru." },
+      { name: "harga", type: "number", required: true, example: "10000", description: "Harga jual baru." },
+      { name: "stock", type: "number", required: true, example: "30", description: "Stok baru." },
+      { name: "kategori", type: "string", required: true, example: "Minuman", description: "Kategori produk." },
+      { name: "gambar", type: "string", required: false, example: "https://example.com/image.jpg", description: "URL gambar produk." }
+    ],
+    "/operator/products/:id/stock": [
+      { name: "stock", type: "number", required: true, example: "40", description: "Jumlah stok terbaru." }
+    ],
+    "/kasir/direct-sale": [
+      { name: "payment_method", type: "string", required: true, example: "cash", description: "Pilihan: cash, qris, transfer." },
+      { name: "product_ids", type: "array", required: true, example: "1,2", description: "ID produk yang dipilih." },
+      { name: "qty_{productId}", type: "number", required: true, example: "2", description: "Quantity untuk tiap produk." }
+    ],
+    "/kasir/pay/:id": [
+      { name: "payment_method", type: "string", required: true, example: "qris", description: "Pilihan: cash, qris, transfer, smartbank." }
+    ],
+    "/pos/pembayaran": [
+      { name: "transaction_id", type: "number", required: true, example: "12", description: "ID transaksi berstatus approved." }
+    ],
+    "/konsumen/profile": [
+      { name: "nama", type: "string", required: true, example: "Konsumen Demo", description: "Nama profil." },
+      { name: "email", type: "string", required: true, example: "konsumen@warungpos.test", description: "Email profil." },
+      { name: "phone", type: "string", required: false, example: "08123456789", description: "Nomor telepon." }
+    ],
+    "/konsumen/profile/password": [
+      { name: "currentPassword", type: "string", required: true, example: "admin123", description: "Password saat ini." },
+      { name: "newPassword", type: "string", required: true, example: "secret123", description: "Password baru." },
+      { name: "confirmPassword", type: "string", required: true, example: "secret123", description: "Konfirmasi password baru." }
+    ],
+    "/konsumen/cart/:id/qty": [
+      { name: "action", type: "string", required: true, example: "increase", description: "Pilihan: increase atau decrease." },
+      { name: "redirect", type: "string", required: false, example: "/konsumen", description: "URL redirect setelah aksi." }
+    ],
+    "/konsumen/checkout": [
+      { name: "redirect", type: "string", required: false, example: "/konsumen", description: "URL redirect jika checkout gagal." }
+    ]
+  };
+
+  if (path.includes("/approve/") || path === "/kasir/approve/:id" || path === "/kasir/reject/:id" || path === "/operator/products/:id/delete" || path === "/logout" || path === "/konsumen/cart/:id/add" || path === "/konsumen/cart/:id/remove") {
+    return [
+      { name: "redirect", type: "string", required: false, example: "/konsumen", description: "URL redirect opsional jika dikirim form." }
+    ];
+  }
+
+  return bodyMap[path] || [];
+};
+
+const buildExamplePayload = (fields) => fields.reduce((payload, field) => {
+  payload[field.name] = field.example;
+  return payload;
+}, {});
+
+const getResponseExample = (endpoint) => {
+  if (endpoint.path === "/pos/pembayaran") {
+    return {
+      success: true,
+      payment_request_id: "SB-1710000000000-1234",
+      status: "success",
+      transaction_id: 12,
+      message: "Pembayaran SmartBank berhasil."
+    };
+  }
+
+  if (endpoint.response.includes("PDF")) {
+    return "application/pdf download";
+  }
+
+  if (endpoint.response.includes("CSV")) {
+    return "text/csv download";
+  }
+
+  if (endpoint.response.includes("Redirect")) {
+    return "302 redirect";
+  }
+
+  return "text/html";
+};
+
+const buildDocumentedApiEndpoints = () => discoverRouteEndpoints().map((endpoint) => {
+  const bodyFields = getApiBodyFields(endpoint.method, endpoint.path);
+
+  return {
+    ...endpoint,
+    group: getApiGroup(endpoint.path),
+    pathParams: getApiPathParams(endpoint.path),
+    queryParams: getApiQueryParams(endpoint.path),
+    bodyFields,
+    examplePayload: buildExamplePayload(bodyFields),
+    responseExample: getResponseExample(endpoint),
+    specPath: endpoint.path.replace(/:([A-Za-z0-9_]+)/g, "{$1}")
+  };
+});
+
+const getApiGroups = (endpoints) => [...new Set(endpoints.map((endpoint) => endpoint.group))];
+
+const createOpenApiSpec = () => {
+  const documentedApiEndpoints = buildDocumentedApiEndpoints();
+  const paths = {};
+
+  documentedApiEndpoints.forEach((endpoint) => {
+    const method = endpoint.method.toLowerCase();
+    const parameters = [
+      ...endpoint.pathParams.map((param) => ({
+        name: param.name,
+        in: "path",
+        required: param.required,
+        schema: { type: param.type },
+        example: param.example,
+        description: param.description
+      })),
+      ...endpoint.queryParams.map((param) => ({
+        name: param.name,
+        in: "query",
+        required: param.required,
+        schema: { type: param.type },
+        example: param.example,
+        description: param.description
+      }))
+    ];
+
+    paths[endpoint.specPath] = paths[endpoint.specPath] || {};
+    paths[endpoint.specPath][method] = {
+      tags: [endpoint.group],
+      summary: endpoint.purpose,
+      description: `${endpoint.purpose} Arah handler: ${endpoint.direction}. Akses: ${endpoint.access}.`,
+      parameters,
+      requestBody: endpoint.bodyFields.length > 0 ? {
+        required: endpoint.bodyFields.some((field) => field.required),
+        content: {
+          "application/x-www-form-urlencoded": {
+            schema: {
+              type: "object",
+              properties: endpoint.bodyFields.reduce((properties, field) => {
+                properties[field.name] = {
+                  type: field.type,
+                  description: field.description,
+                  example: field.example
+                };
+                return properties;
+              }, {}),
+              required: endpoint.bodyFields.filter((field) => field.required).map((field) => field.name)
+            },
+            example: endpoint.examplePayload
+          }
+        }
+      } : undefined,
+      responses: {
+        200: {
+          description: endpoint.response,
+          content: endpoint.response === "JSON" ? {
+            "application/json": {
+              example: endpoint.responseExample
+            }
+          } : undefined
+        },
+        302: endpoint.response.includes("Redirect") ? {
+          description: "Redirect setelah aksi berhasil/gagal."
+        } : undefined,
+        403: {
+          description: "Akses ditolak jika role tidak sesuai."
+        },
+        500: {
+          description: "Kesalahan server."
+        }
+      }
+    };
+  });
+
+  return {
+    openapi: "3.0.0",
+    info: {
+      title: "WarungPOS API Integrator",
+      version: "1.0.0",
+      description: "Dokumentasi endpoint aktif WarungPOS yang dibuat dari route Express."
+    },
+    servers: [
+      { url: "http://localhost:3000" }
+    ],
+    paths
+  };
+};
+
+const buildHealthCheckPath = (endpointPath) => {
+  return endpointPath.replace(/:([A-Za-z0-9_]+)/g, (match, name) => {
+    if (name === "invoice") {
+      return "DEMO-PAID-001";
+    }
+
+    return "1";
+  });
+};
+
+const getApiHealthStatus = async (endpoint, baseUrl, cookieHeader = "") => {
+  if (endpoint.path === "/manager/api-health.json") {
+    return {
+      status: "ok",
+      label: "OK",
+      code: "registered",
+      message: "Route health check terdaftar. Endpoint ini tidak memanggil dirinya sendiri."
+    };
+  }
+
+  if (endpoint.method !== "GET") {
+    return {
+      status: "ok",
+      label: "OK",
+      code: "registered",
+      message: "Route terdaftar. POST tidak dijalankan otomatis agar data tidak berubah."
+    };
+  }
+
+  try {
+    const response = await fetch(`${baseUrl}${buildHealthCheckPath(endpoint.path)}`, {
+      method: "GET",
+      redirect: "manual",
+      headers: {
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+        "x-warungpos-health-check": "internal"
+      }
+    });
+
+    if (response.status >= 500 || response.status === 404) {
+      return {
+        status: "fail",
+        label: "Gagal",
+        code: response.status,
+        message: `GET mengembalikan status ${response.status}.`
+      };
+    }
+
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      return {
+        status: "ok",
+        label: "OK",
+        code: response.status,
+        message: "Route merespons redirect."
+      };
+    }
+
+    if (response.status === 403) {
+      return {
+        status: "ok",
+        label: "OK",
+        code: response.status,
+        message: "Route aktif dan terlindungi role."
+      };
+    }
+
+    return {
+      status: "ok",
+      label: "OK",
+      code: response.status,
+      message: `Route merespons status ${response.status}.`
+    };
+  } catch (error) {
+    return {
+      status: "fail",
+      label: "Gagal",
+      code: "request_error",
+      message: error.message
+    };
+  }
+};
 
 const formatCurrency = (value) => new Intl.NumberFormat("id-ID", {
   style: "currency",
@@ -201,6 +746,188 @@ const getManagerDashboardData = async (filter, recentTransactionPage = 1) => {
       totalPages: Math.max(1, Math.ceil(recentTransactionCount / RECENT_TRANSACTIONS_PER_PAGE))
     }
   };
+};
+
+exports.exportApiSpec = (req, res) => {
+  return res.json(createOpenApiSpec());
+};
+
+exports.checkApiHealth = async (req, res) => {
+  const apiEndpoints = buildDocumentedApiEndpoints();
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const cookieHeader = req.headers.cookie || "";
+  const results = await Promise.all(apiEndpoints.map(async (endpoint) => {
+    const health = await getApiHealthStatus(endpoint, baseUrl, cookieHeader);
+
+    return {
+      key: `${endpoint.method}:${endpoint.path}`,
+      method: endpoint.method,
+      path: endpoint.path,
+      ...health
+    };
+  }));
+
+  return res.json({
+    checked_at: new Date().toISOString(),
+    total: results.length,
+    ok: results.filter((result) => result.status === "ok").length,
+    fail: results.filter((result) => result.status === "fail").length,
+    results
+  });
+};
+
+exports.apiIntegrator = (req, res) => {
+  const apiEndpoints = buildDocumentedApiEndpoints();
+
+  return res.render("manager/api-integrator-home", {
+    pageTitle: "API Integrator",
+    providers: Object.values(EXTERNAL_API_PROVIDERS),
+    localApiSummary: {
+      total: apiEndpoints.length,
+      get: apiEndpoints.filter((endpoint) => endpoint.method === "GET").length,
+      post: apiEndpoints.filter((endpoint) => endpoint.method === "POST").length
+    }
+  });
+};
+
+exports.localApiIntegrator = (req, res) => {
+  const apiEndpoints = buildDocumentedApiEndpoints();
+
+  return res.render("manager/api-integrator", {
+    pageTitle: "Local API Integrator",
+    apiEndpoints,
+    apiGroups: getApiGroups(apiEndpoints)
+  });
+};
+
+exports.providerApiIntegrator = async (req, res) => {
+  const provider = EXTERNAL_API_PROVIDERS[req.params.provider];
+
+  if (!provider) {
+    return res.status(404).render("errors/404", {
+      pageTitle: "Provider Not Found"
+    });
+  }
+
+  try {
+    const integrations = await ApiIntegrationModel.getByProvider(provider.key);
+
+    return res.render("manager/api-provider", {
+      pageTitle: `${provider.name} API`,
+      provider,
+      integrations
+    });
+  } catch (error) {
+    console.error("Provider API Integrator error:", error);
+    return res.status(500).render("errors/500", {
+      pageTitle: "Server Error"
+    });
+  }
+};
+
+exports.createExternalApiEndpoint = async (req, res) => {
+  const provider = EXTERNAL_API_PROVIDERS[req.params.provider];
+
+  if (!provider) {
+    return res.status(404).render("errors/404", {
+      pageTitle: "Provider Not Found"
+    });
+  }
+
+  try {
+    const payload = normalizeExternalApiInput(provider.key, req.body);
+    await ApiIntegrationModel.create(payload);
+    setFlash(req, {
+      type: "success",
+      message: `Endpoint ${provider.name} berhasil disimpan.`
+    });
+  } catch (error) {
+    setFlash(req, {
+      type: "error",
+      message: error.isValidationError ? error.message : "Gagal menyimpan endpoint eksternal."
+    });
+  }
+
+  return res.redirect(redirectProvider(provider.key));
+};
+
+exports.updateExternalApiEndpoint = async (req, res) => {
+  const provider = EXTERNAL_API_PROVIDERS[req.params.provider];
+  const endpointId = Number(req.params.id);
+
+  if (!provider || !endpointId) {
+    return res.status(404).render("errors/404", {
+      pageTitle: "Endpoint Not Found"
+    });
+  }
+
+  try {
+    const payload = normalizeExternalApiInput(provider.key, req.body);
+    await ApiIntegrationModel.update(endpointId, payload);
+    setFlash(req, {
+      type: "success",
+      message: `Endpoint ${provider.name} berhasil diperbarui.`
+    });
+  } catch (error) {
+    setFlash(req, {
+      type: "error",
+      message: error.isValidationError ? error.message : "Gagal memperbarui endpoint eksternal."
+    });
+  }
+
+  return res.redirect(redirectProvider(provider.key));
+};
+
+exports.deleteExternalApiEndpoint = async (req, res) => {
+  const provider = EXTERNAL_API_PROVIDERS[req.params.provider];
+  const endpointId = Number(req.params.id);
+
+  if (!provider || !endpointId) {
+    return res.status(404).render("errors/404", {
+      pageTitle: "Endpoint Not Found"
+    });
+  }
+
+  try {
+    await ApiIntegrationModel.delete(endpointId, provider.key);
+    setFlash(req, {
+      type: "success",
+      message: "Endpoint berhasil dihapus."
+    });
+  } catch (error) {
+    setFlash(req, {
+      type: "error",
+      message: "Gagal menghapus endpoint."
+    });
+  }
+
+  return res.redirect(redirectProvider(provider.key));
+};
+
+exports.activateExternalApiEndpoint = async (req, res) => {
+  const provider = EXTERNAL_API_PROVIDERS[req.params.provider];
+  const endpointId = Number(req.params.id);
+
+  if (!provider || !endpointId) {
+    return res.status(404).render("errors/404", {
+      pageTitle: "Endpoint Not Found"
+    });
+  }
+
+  try {
+    await ApiIntegrationModel.setActive({ id: endpointId, provider: provider.key });
+    setFlash(req, {
+      type: "success",
+      message: "Endpoint aktif berhasil diperbarui."
+    });
+  } catch (error) {
+    setFlash(req, {
+      type: "error",
+      message: "Gagal mengaktifkan endpoint."
+    });
+  }
+
+  return res.redirect(redirectProvider(provider.key));
 };
 
 exports.index = async (req, res) => {

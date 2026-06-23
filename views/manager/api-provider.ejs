@@ -1,0 +1,219 @@
+<%- include("../partials/header", { pageTitle, bodyClass: "bg-[#f8fbff] text-slate-900" }) %>
+  <div class="min-h-screen lg:flex">
+    <%- include("../partials/sidebar", {
+      sidebarTitle: "Manager Panel",
+      sidebarDescription: "Kelola endpoint eksternal berdasarkan provider agar tidak tercampur antar layanan.",
+      sidebarLinks: [
+        { href: "/manager", label: "Dashboard", short: "DB" },
+        { href: "/manager/api-integrator", label: "API Integrator", short: "API", matchPrefix: "/manager/api-integrator" }
+      ],
+      currentPath,
+      sessionUser
+    }) %>
+
+    <main class="min-w-0 flex-1">
+      <header class="border-b border-blue-100 bg-white/90 px-6 py-5 backdrop-blur">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p class="text-sm font-medium text-slate-500">External API</p>
+            <h2 class="mt-1 text-3xl font-semibold tracking-tight text-slate-950"><%= provider.name %></h2>
+            <p class="mt-2 max-w-3xl text-sm leading-6 text-slate-500"><%= provider.description %></p>
+          </div>
+
+          <div class="flex flex-wrap gap-3">
+            <a href="/manager/api-integrator" class="rounded-2xl border border-blue-100 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-blue-50">
+              Semua Integrasi
+            </a>
+            <button type="button" id="open-endpoint-form" class="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700">
+              Tambah Endpoint <%= provider.name %>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <section class="px-6 py-6">
+        <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div class="space-y-6">
+            <section class="rounded-3xl bg-white p-6 shadow-soft ring-1 ring-slate-200">
+              <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h3 class="text-xl font-semibold text-slate-950">Daftar Endpoint <%= provider.name %></h3>
+                  <p class="mt-1 text-sm text-slate-500">Endpoint yang ditambahkan user akan tersimpan di database dan tampil di sini.</p>
+                </div>
+                <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                  <%= integrations.length %> endpoint
+                </span>
+              </div>
+
+              <div class="mt-5 space-y-3">
+                <% if (integrations.length === 0) { %>
+                  <div class="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center">
+                    <p class="text-sm font-semibold text-slate-700">Belum ada endpoint <%= provider.name %>.</p>
+                    <p class="mt-1 text-sm text-slate-500">Tambahkan endpoint pertama melalui form di kanan.</p>
+                  </div>
+                <% } %>
+
+                <% integrations.forEach((endpoint) => { %>
+                  <article class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div class="min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="rounded-full px-3 py-1 text-xs font-bold <%= endpoint.method === 'GET' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700' %>">
+                            <%= endpoint.method %>
+                          </span>
+                          <h4 class="font-semibold text-slate-950"><%= endpoint.name %></h4>
+                          <% if (Number(endpoint.is_active) === 1) { %>
+                            <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Aktif</span>
+                          <% } %>
+                        </div>
+                        <code class="mt-3 block break-all rounded-2xl bg-white px-3 py-2 text-sm text-slate-700"><%= endpoint.base_url %><%= endpoint.path %></code>
+                        <% if (endpoint.description) { %>
+                          <p class="mt-2 text-sm text-slate-500"><%= endpoint.description %></p>
+                        <% } %>
+                      </div>
+                      <div class="flex flex-wrap gap-2">
+                        <span class="rounded-full px-3 py-1 text-xs font-semibold
+                          <%= endpoint.status === 'ok' ? 'bg-emerald-100 text-emerald-700' : '' %>
+                          <%= endpoint.status === 'failed' ? 'bg-rose-100 text-rose-700' : '' %>
+                          <%= endpoint.status === 'untested' ? 'bg-slate-200 text-slate-600' : '' %>
+                        "><%= endpoint.status %></span>
+                        <button type="button" class="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">Test</button>
+                        <form action="/manager/api-integrator/<%= provider.key %>/endpoints/<%= endpoint.id %>/activate" method="POST">
+                          <button type="submit" class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100">Aktifkan</button>
+                        </form>
+                        <form action="/manager/api-integrator/<%= provider.key %>/endpoints/<%= endpoint.id %>/delete" method="POST" data-confirm="Hapus endpoint ini?">
+                          <button type="submit" class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Hapus</button>
+                        </form>
+                      </div>
+                    </div>
+
+                    <details class="mt-4 rounded-2xl border border-slate-200 bg-white">
+                      <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">Edit endpoint</summary>
+                      <form action="/manager/api-integrator/<%= provider.key %>/endpoints/<%= endpoint.id %>/update" method="POST" class="grid gap-3 border-t border-slate-200 p-4 lg:grid-cols-2">
+                        <input type="text" name="name" value="<%= endpoint.name %>" class="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
+                        <select name="method" class="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
+                          <% ["GET", "POST", "PUT", "DELETE"].forEach((method) => { %>
+                            <option value="<%= method %>" <%= endpoint.method === method ? "selected" : "" %>><%= method %></option>
+                          <% }) %>
+                        </select>
+                        <input type="url" name="base_url" value="<%= endpoint.base_url %>" class="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
+                        <input type="text" name="path" value="<%= endpoint.path %>" class="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
+                        <input type="number" name="expected_status" value="<%= endpoint.expected_status %>" class="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
+                        <input type="text" name="description" value="<%= endpoint.description || '' %>" class="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
+                        <textarea name="headers_json" rows="3" class="rounded-2xl border border-slate-200 px-4 py-3 font-mono text-xs"><%= endpoint.headers_json || '' %></textarea>
+                        <textarea name="body_json" rows="3" class="rounded-2xl border border-slate-200 px-4 py-3 font-mono text-xs"><%= endpoint.body_json || '' %></textarea>
+                        <button type="submit" class="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white lg:col-span-2">Simpan Perubahan</button>
+                      </form>
+                    </details>
+                  </article>
+                <% }) %>
+              </div>
+            </section>
+
+            <section class="rounded-3xl bg-white p-6 shadow-soft ring-1 ring-slate-200">
+              <h3 class="text-xl font-semibold text-slate-950">Hasil Test Endpoint</h3>
+              <div id="test-result-panel" class="mt-5 rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
+                <p class="text-sm font-semibold text-slate-700">Belum ada endpoint yang dites.</p>
+                <p class="mt-1 text-sm text-slate-500">Isi form di kanan lalu klik Test Endpoint.</p>
+              </div>
+            </section>
+          </div>
+
+          <aside id="endpoint-form-panel" class="rounded-3xl bg-white p-6 shadow-soft ring-1 ring-slate-200">
+            <p class="text-sm font-medium text-blue-600">Form Endpoint</p>
+            <h3 class="mt-1 text-xl font-semibold text-slate-950">Tambah API <%= provider.name %></h3>
+            <p class="mt-1 text-sm leading-6 text-slate-500">
+              Provider dikunci otomatis ke <%= provider.name %>, jadi endpoint layanan lain tidak tercampur di halaman ini.
+            </p>
+
+            <form action="/manager/api-integrator/<%= provider.key %>/endpoints" method="POST" class="mt-5 space-y-4">
+              <input type="hidden" name="provider" value="<%= provider.key %>">
+
+              <div>
+                <label class="text-sm font-semibold text-slate-700">Nama Endpoint</label>
+                <input type="text" name="name" placeholder="Create Payment" class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100">
+              </div>
+
+              <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-3">
+                <div>
+                  <label class="text-sm font-semibold text-slate-700">Method</label>
+                  <select name="method" class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100">
+                    <option>GET</option>
+                    <option>POST</option>
+                    <option>PUT</option>
+                    <option>DELETE</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-sm font-semibold text-slate-700">Expected Status</label>
+                  <input type="number" name="expected_status" value="200" class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100">
+                </div>
+              </div>
+
+              <div>
+                <label class="text-sm font-semibold text-slate-700">Base URL</label>
+                <input type="url" name="base_url" placeholder="https://api.example.com" class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100">
+              </div>
+
+              <div>
+                <label class="text-sm font-semibold text-slate-700">Path</label>
+                <input type="text" name="path" placeholder="/v2/payments/create" class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100">
+              </div>
+
+              <div>
+                <label class="text-sm font-semibold text-slate-700">Headers JSON</label>
+                <textarea name="headers_json" rows="4" placeholder='{"Authorization":"Bearer token"}' class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 font-mono text-xs outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"></textarea>
+              </div>
+
+              <div>
+                <label class="text-sm font-semibold text-slate-700">Query JSON</label>
+                <textarea name="query_json" rows="3" placeholder='{"merchant_id":"UMKM-001"}' class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 font-mono text-xs outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"></textarea>
+              </div>
+
+              <div>
+                <label class="text-sm font-semibold text-slate-700">Request Body JSON</label>
+                <textarea name="body_json" rows="6" placeholder='{"invoice":"INV-001","amount":50000}' class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 font-mono text-xs outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"></textarea>
+              </div>
+
+              <div>
+                <label class="text-sm font-semibold text-slate-700">Deskripsi</label>
+                <textarea name="description" rows="3" placeholder="Endpoint untuk membuat pembayaran baru." class="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-100"></textarea>
+              </div>
+
+              <div class="grid gap-3 sm:grid-cols-2">
+                <button type="button" id="test-endpoint-button" class="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-100">
+                  Test Endpoint
+                </button>
+                <button type="submit" class="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
+                  Simpan Endpoint
+                </button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+<%- include("../partials/footer", {
+  flash,
+  extraScripts: `
+    <script>
+      (() => {
+        const openButton = document.getElementById("open-endpoint-form");
+        const formPanel = document.getElementById("endpoint-form-panel");
+        const testButton = document.getElementById("test-endpoint-button");
+        const resultPanel = document.getElementById("test-result-panel");
+
+        openButton?.addEventListener("click", () => {
+          formPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+
+        testButton?.addEventListener("click", () => {
+          resultPanel.className = "mt-5 rounded-3xl border border-amber-200 bg-amber-50 px-6 py-6";
+          resultPanel.innerHTML = '<p class="text-sm font-semibold text-amber-700">UI test endpoint sudah disiapkan.</p><p class="mt-1 text-sm text-amber-700/80">Tahap berikutnya: sambungkan tombol ini ke backend untuk request ke endpoint eksternal, simpan hasil OK/Gagal, dan aktifkan endpoint dari database.</p>';
+          resultPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      })();
+    </script>
+  `
+}) %>
