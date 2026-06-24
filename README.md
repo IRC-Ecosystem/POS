@@ -66,8 +66,8 @@ Pada alur penjualan langsung, kasir memilih produk dan metode pembayaran secara 
 4. **Pengurangan stok berbasis status pembayaran**
    Stok produk tidak dikurangi saat transaksi masih `pending` atau `approved`. Stok baru dikurangi ketika transaksi menjadi `paid`.
 
-5. **SmartBank dummy API**
-   Pembayaran SmartBank pada aplikasi ini adalah simulasi. Sistem membuat `payment_request_id` dummy dan mengembalikan status `success` atau `failed` secara acak.
+5. **SmartBank melalui API Integrator**
+   Pembayaran SmartBank tidak lagi random. Kasir dapat memilih metode `SmartBank`, lalu sistem memakai endpoint SmartBank aktif yang dikelola dari Manager > API Integrator.
 
 ---
 
@@ -460,7 +460,17 @@ PORT=3000
 
 Sesuaikan `DB_USER` dan `DB_PASS` dengan konfigurasi MySQL lokal.
 
-### 8.4 Import Database
+### 8.4 Setup Database
+
+Cara paling cepat:
+
+```bash
+npm run setup:db
+```
+
+Script tersebut membuat database, tabel, produk demo, transaksi demo, dan akun demo.
+
+Atau jalankan file SQL berikut pada MySQL:
 
 Jalankan file SQL berikut pada MySQL:
 
@@ -489,6 +499,21 @@ Aplikasi berjalan pada:
 ```txt
 http://localhost:3000
 ```
+
+### 8.6 Akun Demo
+
+Semua akun memakai password:
+
+```txt
+admin123
+```
+
+| Role | Email |
+| --- | --- |
+| Manager | `manager@warungpos.test` |
+| Operator | `operator@warungpos.test` |
+| Kasir | `kasir@warungpos.test` |
+| Konsumen | `konsumen@warungpos.test` |
 
 ---
 
@@ -539,46 +564,38 @@ warungpos/
 
 ---
 
-## 10. SmartBank Dummy API
+## 10. API Integrator dan SmartBank
 
-Route simulasi:
+Manager dapat membuka:
 
 ```txt
-POST /pos/pembayaran
+http://localhost:3000/manager/api-integrator
 ```
 
-Payload minimal:
+Fitur API Integrator:
 
-```json
-{
-  "transaction_id": 12
-}
+- Menampilkan endpoint lokal POS secara otomatis.
+- Menyediakan halaman provider eksternal: SmartBank, API Gateway, dan UMKM Insight.
+- Menambah, mengubah, menghapus, mengetes, dan mengaktifkan endpoint eksternal.
+- Menyimpan status endpoint: `untested`, `ok`, atau `failed`.
+- Endpoint SmartBank yang aktif dipakai ketika kasir membayar transaksi dengan metode `SmartBank`.
+
+Konfigurasi SmartBank di `.env` POS:
+
+```env
+SMARTBANK_BASE_URL=http://localhost:4000
+SMARTBANK_TOKEN=
+SMARTBANK_PAYER_WALLET_ID=
+SMARTBANK_PAYEE_WALLET_ID=
 ```
 
-Contoh response sukses:
+Contoh endpoint SmartBank yang sudah disiapkan:
 
-```json
-{
-  "success": true,
-  "payment_request_id": "SB-1710000000000-1234",
-  "status": "success",
-  "transaction_id": 12,
-  "message": "Pembayaran SmartBank berhasil."
-}
+```txt
+POST http://localhost:4000/api/bank/payment-requests
 ```
 
-Contoh response gagal:
-
-```json
-{
-  "success": false,
-  "payment_request_id": "SB-1710000000000-5678",
-  "status": "failed",
-  "message": "Pembayaran SmartBank gagal diproses."
-}
-```
-
-Jika pembayaran sukses, transaksi berubah menjadi `paid`, `payment_method` menjadi `smartbank`, dan stok produk dikurangi.
+Endpoint tersebut membutuhkan SmartBank Gateway hidup di port `4000`, token SmartBank valid, serta wallet ID payer dan payee yang benar.
 
 ---
 
@@ -591,7 +608,9 @@ Jika pembayaran sukses, transaksi berubah menjadi `paid`, `payment_method` menja
 - [x] Katalog Konsumen dengan search, filter kategori, cart, checkout, waiting approval, history, dan receipt.
 - [x] Dashboard Kasir untuk approval transaksi, pembayaran, direct sale, dan receipt.
 - [x] Pengurangan stok otomatis saat transaksi `paid`.
-- [x] Simulasi pembayaran SmartBank dummy.
+- [x] API Integrator untuk endpoint lokal dan eksternal.
+- [x] Test health endpoint dan endpoint eksternal.
+- [x] Pembayaran SmartBank memakai endpoint aktif dari API Integrator.
 - [x] Middleware keamanan: Helmet, rate limit, sanitasi input, session timeout, dan error pages.
 - [x] Dokumentasi workflow, database, route, instalasi, dan struktur folder.
 

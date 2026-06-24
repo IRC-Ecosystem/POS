@@ -83,6 +83,34 @@ exports.getById = (id) => querySingle(
   [id]
 );
 
+exports.getActiveByProvider = (provider) => querySingle(
+  `
+    SELECT
+      id,
+      provider,
+      name,
+      method,
+      base_url,
+      path,
+      headers_json,
+      query_json,
+      body_json,
+      expected_status,
+      description,
+      status,
+      last_checked_at,
+      last_response_code,
+      last_response_body,
+      is_active,
+      created_at,
+      updated_at
+    FROM api_integrations
+    WHERE provider = ? AND is_active = 1
+    LIMIT 1
+  `,
+  [provider]
+);
+
 exports.create = (integration) => query(
   `
     INSERT INTO api_integrations

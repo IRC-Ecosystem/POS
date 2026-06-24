@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
+    "setup:db": "node database/setup_local.js",
     "test": "echo \"No automated tests configured yet\""
   },
   "keywords": [],

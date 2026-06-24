@@ -54,7 +54,7 @@
                 <% } %>
 
                 <% integrations.forEach((endpoint) => { %>
-                  <article class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                  <article class="external-endpoint rounded-3xl border border-slate-200 bg-slate-50 p-4" data-endpoint-id="<%= endpoint.id %>">
                     <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                       <div class="min-w-0">
                         <div class="flex flex-wrap items-center gap-2">
@@ -72,14 +72,18 @@
                         <% } %>
                       </div>
                       <div class="flex flex-wrap gap-2">
-                        <span class="rounded-full px-3 py-1 text-xs font-semibold
+                        <span class="endpoint-status rounded-full px-3 py-1 text-xs font-semibold
                           <%= endpoint.status === 'ok' ? 'bg-emerald-100 text-emerald-700' : '' %>
                           <%= endpoint.status === 'failed' ? 'bg-rose-100 text-rose-700' : '' %>
                           <%= endpoint.status === 'untested' ? 'bg-slate-200 text-slate-600' : '' %>
                         "><%= endpoint.status %></span>
-                        <button type="button" class="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">Test</button>
+                        <button type="button" data-test-url="/manager/api-integrator/<%= provider.key %>/endpoints/<%= endpoint.id %>/test" class="test-saved-endpoint rounded-2xl border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100">Test</button>
                         <form action="/manager/api-integrator/<%= provider.key %>/endpoints/<%= endpoint.id %>/activate" method="POST">
-                          <button type="submit" class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100">Aktifkan</button>
+                          <button
+                            type="submit"
+                            title="<%= endpoint.status === 'ok' ? 'Jadikan endpoint aktif' : 'Test endpoint sampai OK sebelum diaktifkan' %>"
+                            class="rounded-2xl border px-4 py-2 text-xs font-semibold transition <%= endpoint.status === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-slate-200 bg-slate-100 text-slate-400' %>"
+                          >Aktifkan</button>
                         </form>
                         <form action="/manager/api-integrator/<%= provider.key %>/endpoints/<%= endpoint.id %>/delete" method="POST" data-confirm="Hapus endpoint ini?">
                           <button type="submit" class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">Hapus</button>
@@ -101,6 +105,7 @@
                         <input type="number" name="expected_status" value="<%= endpoint.expected_status %>" class="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
                         <input type="text" name="description" value="<%= endpoint.description || '' %>" class="rounded-2xl border border-slate-200 px-4 py-3 text-sm">
                         <textarea name="headers_json" rows="3" class="rounded-2xl border border-slate-200 px-4 py-3 font-mono text-xs"><%= endpoint.headers_json || '' %></textarea>
+                        <textarea name="query_json" rows="3" class="rounded-2xl border border-slate-200 px-4 py-3 font-mono text-xs"><%= endpoint.query_json || '' %></textarea>
                         <textarea name="body_json" rows="3" class="rounded-2xl border border-slate-200 px-4 py-3 font-mono text-xs"><%= endpoint.body_json || '' %></textarea>
                         <button type="submit" class="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white lg:col-span-2">Simpan Perubahan</button>
                       </form>
@@ -125,6 +130,48 @@
             <p class="mt-1 text-sm leading-6 text-slate-500">
               Provider dikunci otomatis ke <%= provider.name %>, jadi endpoint layanan lain tidak tercampur di halaman ini.
             </p>
+
+            <% if (provider.key === 'smartbank') { %>
+              <div class="mt-5 rounded-3xl border border-blue-100 bg-blue-50 p-4">
+                <p class="text-sm font-semibold text-blue-800">Contoh endpoint pembayaran SmartBank</p>
+                <dl class="mt-3 space-y-2 text-xs text-blue-900">
+                  <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-2">
+                    <dt class="font-semibold">Method</dt>
+                    <dd>POST</dd>
+                  </div>
+                  <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-2">
+                    <dt class="font-semibold">Base URL</dt>
+                    <dd class="break-all">http://localhost:4000</dd>
+                  </div>
+                  <div class="grid grid-cols-[96px_minmax(0,1fr)] gap-2">
+                    <dt class="font-semibold">Path</dt>
+                    <dd class="break-all">/api/bank/payment-requests</dd>
+                  </div>
+                </dl>
+                <p class="mt-3 text-xs leading-5 text-blue-800">
+                  Isi token dan wallet ID di file .env POS. Placeholder akan diganti otomatis saat kasir membayar dengan SmartBank.
+                </p>
+                <pre class="mt-3 max-h-52 overflow-auto rounded-2xl bg-slate-950 p-3 text-xs leading-5 text-slate-100"><code>Headers:
+{
+  "Authorization": "Bearer {{token}}",
+  "Idempotency-Key": "{{idempotency_key}}"
+}
+
+Body:
+{
+  "source_app": "POS",
+  "payer_wallet_id": "{{payer_wallet_id}}",
+  "payee_wallet_id": "{{payee_wallet_id}}",
+  "gross_amount": "{{grand_total}}",
+  "description": "Pembayaran POS {{invoice}}",
+  "metadata": {
+    "invoice": "{{invoice}}",
+    "transaction_id": "{{transaction_id}}"
+  },
+  "expires_at": "{{expires_at}}"
+}</code></pre>
+              </div>
+            <% } %>
 
             <form action="/manager/api-integrator/<%= provider.key %>/endpoints" method="POST" class="mt-5 space-y-4">
               <input type="hidden" name="provider" value="<%= provider.key %>">
@@ -208,9 +255,75 @@
           formPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
         });
 
+        const escapeHtml = (value) => String(value || "").replace(/[&<>"']/g, (char) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;"
+        }[char]));
+
+        const renderResult = (payload) => {
+          const isOk = payload.status === "ok" || payload.success === true;
+          resultPanel.className = "mt-5 rounded-3xl border px-6 py-6 " + (isOk ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50");
+          resultPanel.innerHTML = [
+            '<p class="text-sm font-semibold ' + (isOk ? "text-emerald-700" : "text-rose-700") + '">' + (isOk ? "Endpoint berjalan baik" : "Endpoint gagal") + '</p>',
+            '<p class="mt-1 text-sm ' + (isOk ? "text-emerald-700/80" : "text-rose-700/80") + '">' + (payload.message || "-") + '</p>',
+            '<div class="mt-4 grid gap-3 text-sm sm:grid-cols-3">',
+            '<div class="rounded-2xl bg-white/70 p-3"><p class="text-slate-500">Status</p><p class="font-semibold text-slate-950">' + (payload.status || "-") + '</p></div>',
+            '<div class="rounded-2xl bg-white/70 p-3"><p class="text-slate-500">HTTP Code</p><p class="font-semibold text-slate-950">' + (payload.response_code || "-") + '</p></div>',
+            '<div class="rounded-2xl bg-white/70 p-3"><p class="text-slate-500">Durasi</p><p class="font-semibold text-slate-950">' + (payload.duration_ms ? payload.duration_ms + " ms" : "-") + '</p></div>',
+            '</div>',
+            '<pre class="mt-4 max-h-72 overflow-auto rounded-2xl bg-slate-950 p-4 text-left text-xs leading-5 text-slate-100"><code>' + escapeHtml(payload.response_body) + '</code></pre>'
+          ].join("");
+          resultPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+        };
+
+        const setEndpointStatus = (button, status) => {
+          const article = button.closest(".external-endpoint");
+          const badge = article?.querySelector(".endpoint-status");
+          if (!badge) {
+            return;
+          }
+
+          badge.textContent = status;
+          badge.className = "endpoint-status rounded-full px-3 py-1 text-xs font-semibold " + (status === "ok" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700");
+        };
+
+        document.querySelectorAll(".test-saved-endpoint").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = "Testing...";
+            resultPanel.className = "mt-5 rounded-3xl border border-blue-200 bg-blue-50 px-6 py-6";
+            resultPanel.innerHTML = '<p class="text-sm font-semibold text-blue-700">Mengetes endpoint...</p>';
+
+            try {
+              const response = await fetch(button.dataset.testUrl, {
+                method: "POST",
+                headers: { accept: "application/json" }
+              });
+              const payload = await response.json();
+              renderResult(payload);
+              setEndpointStatus(button, payload.status || "failed");
+            } catch (error) {
+              renderResult({
+                success: false,
+                status: "failed",
+                message: error.message,
+                response_body: ""
+              });
+              setEndpointStatus(button, "failed");
+            } finally {
+              button.disabled = false;
+              button.textContent = originalText;
+            }
+          });
+        });
+
         testButton?.addEventListener("click", () => {
           resultPanel.className = "mt-5 rounded-3xl border border-amber-200 bg-amber-50 px-6 py-6";
-          resultPanel.innerHTML = '<p class="text-sm font-semibold text-amber-700">UI test endpoint sudah disiapkan.</p><p class="mt-1 text-sm text-amber-700/80">Tahap berikutnya: sambungkan tombol ini ke backend untuk request ke endpoint eksternal, simpan hasil OK/Gagal, dan aktifkan endpoint dari database.</p>';
+          resultPanel.innerHTML = '<p class="text-sm font-semibold text-amber-700">Simpan endpoint terlebih dahulu.</p><p class="mt-1 text-sm text-amber-700/80">Tahap 3 mengetes endpoint yang sudah tersimpan di database agar hasil OK/Gagal bisa dicatat.</p>';
           resultPanel.scrollIntoView({ behavior: "smooth", block: "center" });
         });
       })();

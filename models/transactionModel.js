@@ -385,6 +385,63 @@ exports.updateStatus = async ({ transactionId, status, cashierId, allowedCurrent
   }
 };
 
+exports.validatePayableTransaction = async (transactionId) => {
+  const transaction = await getSingle(
+    `
+      SELECT id, invoice, status, stock_deducted
+      FROM transactions
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [transactionId]
+  );
+
+  if (!transaction) {
+    return { success: false, reason: "not_found" };
+  }
+
+  if (transaction.status !== "approved") {
+    return { success: false, reason: "invalid_status", transaction };
+  }
+
+  if (Number(transaction.stock_deducted || 0) === 0) {
+    const items = await query(
+      `
+        SELECT product_id, qty
+        FROM transaction_items
+        WHERE transaction_id = ?
+      `,
+      [transactionId]
+    );
+
+    for (const item of items) {
+      const product = await getSingle(
+        `
+          SELECT id, nama_produk, stock
+          FROM products
+          WHERE id = ?
+          LIMIT 1
+        `,
+        [item.product_id]
+      );
+
+      if (!product) {
+        return { success: false, reason: "product_not_found" };
+      }
+
+      if (Number(product.stock) < Number(item.qty)) {
+        return {
+          success: false,
+          reason: "insufficient_stock",
+          productName: product.nama_produk
+        };
+      }
+    }
+  }
+
+  return { success: true, transaction };
+};
+
 exports.payTransaction = async ({ transactionId, cashierId, paymentMethod }) => {
   try {
     await beginTransaction();

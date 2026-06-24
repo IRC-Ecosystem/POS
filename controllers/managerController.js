@@ -1,5 +1,6 @@
 const TransactionModel = require("../models/transactionModel");
 const ApiIntegrationModel = require("../models/apiIntegrationModel");
+const { callExternalIntegration } = require("../services/apiIntegrationClient");
 const { createObjectCsvStringifier } = require("csv-writer");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
@@ -141,6 +142,89 @@ const redirectProvider = (providerKey) => `/manager/api-integrator/${providerKey
 
 const setFlash = (req, payload) => {
   req.session.flash = payload;
+};
+
+const parseStoredJson = (value, fallback) => {
+  if (!value) {
+    return fallback;
+  }
+
+  if (typeof value === "object") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return fallback;
+  }
+};
+
+const buildExternalApiUrl = (integration) => {
+  const url = new URL(`${integration.base_url}${integration.path}`);
+  const query = parseStoredJson(integration.query_json, {});
+
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      url.searchParams.set(key, String(value));
+    }
+  });
+
+  return url.toString();
+};
+
+const testExternalIntegration = async (integration) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  const headers = {
+    ...parseStoredJson(integration.headers_json, {})
+  };
+  const options = {
+    method: integration.method,
+    headers,
+    signal: controller.signal
+  };
+  const bodyPayload = parseStoredJson(integration.body_json, null);
+
+  if (["POST", "PUT", "DELETE"].includes(integration.method) && bodyPayload !== null) {
+    if (!Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
+      options.headers = {
+        ...headers,
+        "content-type": "application/json"
+      };
+    }
+
+    options.body = JSON.stringify(bodyPayload);
+  }
+
+  try {
+    const startedAt = Date.now();
+    const response = await fetch(buildExternalApiUrl(integration), options);
+    const responseText = await response.text();
+    const durationMs = Date.now() - startedAt;
+    const expectedStatus = Number(integration.expected_status || 200);
+    const status = response.status === expectedStatus ? "ok" : "failed";
+
+    return {
+      status,
+      responseCode: response.status,
+      responseBody: responseText.slice(0, 5000),
+      durationMs,
+      message: status === "ok"
+        ? `Endpoint merespons sesuai expected status ${expectedStatus}.`
+        : `Endpoint merespons ${response.status}, expected ${expectedStatus}.`
+    };
+  } catch (error) {
+    return {
+      status: "failed",
+      responseCode: null,
+      responseBody: error.name === "AbortError" ? "Request timeout setelah 10 detik." : error.message,
+      durationMs: null,
+      message: error.name === "AbortError" ? "Request timeout setelah 10 detik." : error.message
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 };
 
 const normalizeAccess = (handlerSource) => {
@@ -915,6 +999,24 @@ exports.activateExternalApiEndpoint = async (req, res) => {
   }
 
   try {
+    const integration = await ApiIntegrationModel.getById(endpointId);
+
+    if (!integration || integration.provider !== provider.key) {
+      setFlash(req, {
+        type: "error",
+        message: "Endpoint tidak ditemukan untuk provider ini."
+      });
+      return res.redirect(redirectProvider(provider.key));
+    }
+
+    if (integration.status !== "ok") {
+      setFlash(req, {
+        type: "error",
+        message: "Endpoint harus dites dan berstatus OK sebelum bisa diaktifkan."
+      });
+      return res.redirect(redirectProvider(provider.key));
+    }
+
     await ApiIntegrationModel.setActive({ id: endpointId, provider: provider.key });
     setFlash(req, {
       type: "success",
@@ -928,6 +1030,53 @@ exports.activateExternalApiEndpoint = async (req, res) => {
   }
 
   return res.redirect(redirectProvider(provider.key));
+};
+
+exports.testExternalApiEndpoint = async (req, res) => {
+  const provider = EXTERNAL_API_PROVIDERS[req.params.provider];
+  const endpointId = Number(req.params.id);
+
+  if (!provider || !endpointId) {
+    return res.status(404).json({
+      success: false,
+      message: "Endpoint tidak ditemukan."
+    });
+  }
+
+  try {
+    const integration = await ApiIntegrationModel.getById(endpointId);
+
+    if (!integration || integration.provider !== provider.key) {
+      return res.status(404).json({
+        success: false,
+        message: "Endpoint tidak ditemukan untuk provider ini."
+      });
+    }
+
+    const result = await callExternalIntegration(integration);
+    await ApiIntegrationModel.updateStatus({
+      id: endpointId,
+      status: result.status,
+      lastResponseCode: result.responseCode,
+      lastResponseBody: result.responseBody
+    });
+
+    return res.json({
+      success: result.status === "ok",
+      endpoint_id: endpointId,
+      status: result.status,
+      response_code: result.responseCode,
+      response_body: result.responseBody,
+      duration_ms: result.durationMs,
+      message: result.message
+    });
+  } catch (error) {
+    console.error("Test external API endpoint error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Gagal mengetes endpoint eksternal."
+    });
+  }
 };
 
 exports.index = async (req, res) => {

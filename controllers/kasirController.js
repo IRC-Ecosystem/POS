@@ -1,5 +1,7 @@
 const TransactionModel = require("../models/transactionModel");
 const ProductModel = require("../models/productModel");
+const ApiIntegrationModel = require("../models/apiIntegrationModel");
+const { callExternalIntegration } = require("../services/apiIntegrationClient");
 
 const ROLE_REDIRECTS = {
   manager: "/manager",
@@ -75,6 +77,74 @@ const generateInvoice = () => {
   const timestamp = Date.now();
   const randomPart = Math.floor(1000 + (Math.random() * 9000));
   return `KSR${timestamp}${randomPart}`;
+};
+
+const buildSmartBankVariables = (transaction, cashierId, paymentRequestId) => {
+  const expiresAt = new Date(Date.now() + (15 * 60 * 1000)).toISOString();
+
+  return {
+    token: process.env.SMARTBANK_TOKEN || "",
+    smartbank_token: process.env.SMARTBANK_TOKEN || "",
+    smartbank_base_url: process.env.SMARTBANK_BASE_URL || "http://localhost:4000",
+    payer_wallet_id: process.env.SMARTBANK_PAYER_WALLET_ID || "",
+    payee_wallet_id: process.env.SMARTBANK_PAYEE_WALLET_ID || "",
+    payment_request_id: paymentRequestId,
+    idempotency_key: paymentRequestId,
+    expires_at: expiresAt,
+    transaction_id: transaction.id,
+    invoice: transaction.invoice,
+    subtotal: Number(transaction.subtotal || 0),
+    fee: Number(transaction.fee || 0),
+    grand_total: Number(transaction.grand_total || 0),
+    customer_name: transaction.customer_name || transaction.customer_email || "Konsumen",
+    customer_email: transaction.customer_email || "",
+    cashier_id: cashierId
+  };
+};
+
+const processSmartBankEndpoint = async ({ transaction, cashierId }) => {
+  const activeEndpoint = await ApiIntegrationModel.getActiveByProvider("smartbank");
+
+  if (!activeEndpoint) {
+    return {
+      success: false,
+      status: "failed",
+      payment_request_id: null,
+      message: "Belum ada endpoint SmartBank aktif. Test endpoint sampai OK lalu aktifkan dari API Integrator."
+    };
+  }
+
+  if (activeEndpoint.status !== "ok") {
+    return {
+      success: false,
+      status: "failed",
+      payment_request_id: null,
+      message: "Endpoint SmartBank aktif belum berstatus OK."
+    };
+  }
+
+  const paymentRequestId = `SB-${Date.now()}-${Math.floor(1000 + (Math.random() * 9000))}`;
+  const variables = buildSmartBankVariables(transaction, cashierId, paymentRequestId);
+  const result = await callExternalIntegration(activeEndpoint, {
+    variables,
+    defaultBody: variables
+  });
+
+  await ApiIntegrationModel.updateStatus({
+    id: activeEndpoint.id,
+    status: result.status,
+    lastResponseCode: result.responseCode,
+    lastResponseBody: result.responseBody
+  });
+
+  return {
+    success: result.success,
+    status: result.success ? "success" : "failed",
+    payment_request_id: paymentRequestId,
+    message: result.success ? "Pembayaran SmartBank berhasil diproses melalui endpoint aktif." : result.message,
+    endpoint_name: activeEndpoint.name,
+    response_code: result.responseCode
+  };
 };
 
 const normalizeProduct = (product) => ({
@@ -404,6 +474,53 @@ exports.payTransaction = async (req, res) => {
   }
 
   try {
+    if (paymentMethod === "smartbank") {
+      const transaction = await TransactionModel.getById(transactionId);
+
+      if (!transaction) {
+        setFlash(req, {
+          type: "error",
+          message: "Transaksi tidak ditemukan."
+        });
+        return res.redirect("/kasir");
+      }
+
+      if (transaction.status !== "approved") {
+        setFlash(req, {
+          type: "error",
+          message: "Hanya transaksi approved yang bisa dibayar."
+        });
+        return res.redirect("/kasir");
+      }
+
+      const payable = await TransactionModel.validatePayableTransaction(transactionId);
+
+      if (!payable.success) {
+        const message = payable.reason === "insufficient_stock"
+          ? `Stock untuk ${payable.productName} tidak mencukupi.`
+          : "Transaksi belum bisa diproses ke SmartBank.";
+
+        setFlash(req, {
+          type: "error",
+          message
+        });
+        return res.redirect("/kasir");
+      }
+
+      const smartBankResult = await processSmartBankEndpoint({
+        transaction,
+        cashierId: req.session.user.id
+      });
+
+      if (!smartBankResult.success) {
+        setFlash(req, {
+          type: "error",
+          message: smartBankResult.message || "Pembayaran SmartBank gagal diproses."
+        });
+        return res.redirect("/kasir");
+      }
+    }
+
     const result = await TransactionModel.payTransaction({
       transactionId,
       cashierId: req.session.user.id,
@@ -438,7 +555,9 @@ exports.payTransaction = async (req, res) => {
 
     setFlash(req, {
       type: "success",
-      message: "Pembayaran berhasil diproses."
+      message: paymentMethod === "smartbank"
+        ? "Pembayaran SmartBank berhasil melalui endpoint aktif."
+        : "Pembayaran berhasil diproses."
     });
 
     return res.redirect(`/kasir/receipt/${transactionId}`);
@@ -479,15 +598,30 @@ exports.smartBankPayment = async (req, res) => {
       });
     }
 
-    const paymentRequestId = `SB-${Date.now()}-${Math.floor(1000 + (Math.random() * 9000))}`;
-    const paymentSucceeded = Math.random() >= 0.35;
+    const payable = await TransactionModel.validatePayableTransaction(transactionId);
 
-    if (!paymentSucceeded) {
+    if (!payable.success) {
+      return res.status(400).json({
+        success: false,
+        message: payable.reason === "insufficient_stock"
+          ? `Stock untuk ${payable.productName} tidak mencukupi.`
+          : "Transaksi belum bisa diproses ke SmartBank."
+      });
+    }
+
+    const smartBankResult = await processSmartBankEndpoint({
+      transaction,
+      cashierId: req.session.user.id
+    });
+
+    if (!smartBankResult.success) {
       return res.status(200).json({
         success: false,
-        payment_request_id: paymentRequestId,
+        payment_request_id: smartBankResult.payment_request_id,
         status: "failed",
-        message: "Pembayaran SmartBank gagal diproses."
+        message: smartBankResult.message,
+        endpoint_name: smartBankResult.endpoint_name,
+        response_code: smartBankResult.response_code
       });
     }
 
@@ -500,7 +634,7 @@ exports.smartBankPayment = async (req, res) => {
     if (!result.success) {
       return res.status(400).json({
         success: false,
-        payment_request_id: paymentRequestId,
+        payment_request_id: smartBankResult.payment_request_id,
         status: "failed",
         message: "Transaksi gagal diubah ke status paid."
       });
@@ -508,9 +642,11 @@ exports.smartBankPayment = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      payment_request_id: paymentRequestId,
+      payment_request_id: smartBankResult.payment_request_id,
       status: "success",
       transaction_id: transactionId,
+      endpoint_name: smartBankResult.endpoint_name,
+      response_code: smartBankResult.response_code,
       message: "Pembayaran SmartBank berhasil."
     });
   } catch (error) {

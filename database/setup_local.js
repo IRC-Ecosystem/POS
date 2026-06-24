@@ -129,6 +129,72 @@ const seedTransactions = async (connection) => {
   }
 };
 
+const seedApiIntegrations = async (connection) => {
+  await connection.execute(
+    `
+      INSERT INTO api_integrations
+        (provider, name, method, base_url, path, headers_json, query_json, body_json, expected_status, description, status, is_active)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'untested', 0
+      WHERE NOT EXISTS (
+        SELECT 1 FROM api_integrations WHERE provider = ? AND name = ? LIMIT 1
+      )
+    `,
+    [
+      "smartbank",
+      "SmartBank Create Payment Request",
+      "POST",
+      process.env.SMARTBANK_BASE_URL || "http://localhost:4000",
+      "/api/bank/payment-requests",
+      JSON.stringify({
+        Authorization: "Bearer {{token}}",
+        "Idempotency-Key": "{{idempotency_key}}"
+      }),
+      JSON.stringify({}),
+      JSON.stringify({
+        source_app: "POS",
+        payer_wallet_id: "{{payer_wallet_id}}",
+        payee_wallet_id: "{{payee_wallet_id}}",
+        gross_amount: "{{grand_total}}",
+        description: "Pembayaran POS {{invoice}}",
+        metadata: {
+          invoice: "{{invoice}}",
+          transaction_id: "{{transaction_id}}"
+        },
+        expires_at: "{{expires_at}}"
+      }),
+      201,
+      "Membuat payment request SmartBank dari transaksi POS. Isi SMARTBANK_TOKEN, SMARTBANK_PAYER_WALLET_ID, dan SMARTBANK_PAYEE_WALLET_ID di .env sebelum test.",
+      "smartbank",
+      "SmartBank Create Payment Request"
+    ]
+  );
+
+  await connection.execute(
+    `
+      INSERT INTO api_integrations
+        (provider, name, method, base_url, path, headers_json, query_json, body_json, expected_status, description, status, is_active)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'untested', 0
+      WHERE NOT EXISTS (
+        SELECT 1 FROM api_integrations WHERE provider = ? AND name = ? LIMIT 1
+      )
+    `,
+    [
+      "smartbank",
+      "SmartBank Health Check",
+      "GET",
+      process.env.SMARTBANK_BASE_URL || "http://localhost:4000",
+      "/health",
+      JSON.stringify({}),
+      JSON.stringify({}),
+      JSON.stringify({}),
+      200,
+      "Mengecek apakah SmartBank API Gateway sedang aktif.",
+      "smartbank",
+      "SmartBank Health Check"
+    ]
+  );
+};
+
 const main = async () => {
   const schemaPath = path.join(__dirname, "migrate_to_current_schema.sql");
   const schema = fs.readFileSync(schemaPath, "utf8");
@@ -141,6 +207,7 @@ const main = async () => {
   await upsertUsers(connection);
   await seedProducts(connection);
   await seedTransactions(connection);
+  await seedApiIntegrations(connection);
   await connection.end();
 
   console.log("Database warungpos siap.");

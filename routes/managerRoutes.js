@@ -10,6 +10,7 @@ router.get("/manager/api-integrator/local", requireRole("manager"), managerContr
 router.get("/manager/api-integrator/:provider", requireRole("manager"), managerController.providerApiIntegrator);
 router.post("/manager/api-integrator/:provider/endpoints", requireRole("manager"), managerController.createExternalApiEndpoint);
 router.post("/manager/api-integrator/:provider/endpoints/:id/update", requireRole("manager"), managerController.updateExternalApiEndpoint);
+router.post("/manager/api-integrator/:provider/endpoints/:id/test", requireRole("manager"), managerController.testExternalApiEndpoint);
 router.post("/manager/api-integrator/:provider/endpoints/:id/activate", requireRole("manager"), managerController.activateExternalApiEndpoint);
 router.post("/manager/api-integrator/:provider/endpoints/:id/delete", requireRole("manager"), managerController.deleteExternalApiEndpoint);
 router.get("/manager/api-spec.json", requireRole("manager"), managerController.exportApiSpec);
