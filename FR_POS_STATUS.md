@@ -23,6 +23,37 @@ Dokumen ini merangkum kesesuaian aplikasi POS terhadap Functional Requirement Wa
 | FR-POS-004 | Status `paid` baru diberikan setelah proses pembayaran berhasil. |
 | FR-POS-005 | Validasi stok sudah dilakukan sebelum transaksi/payment dan stok dipotong saat transaksi `paid`. |
 
+## Perbaikan Hari Ini
+
+| FR | Area | Perbaikan | Detail Implementasi | Role Terdampak | Status |
+| --- | --- | --- | --- | --- | --- |
+| FR-POS-001 | Alur invoice kasir | Invoice kasir dibuat sebelum pembayaran. | Kasir memilih produk dan quantity, lalu sistem membuat invoice direct sale dengan status `pending_payment`. Invoice belum memerlukan metode pembayaran di tahap ini. | Kasir | Selesai |
+| FR-POS-001 | UI kasir | Dashboard kasir dibuat ulang agar menyerupai alur kasir toko offline. | Halaman transaksi dipisah menjadi `Pilih Produk`, `Invoice Aktif`, dan `Antrian Bayar`. Transaksi masuk dipindahkan ke menu sidebar sendiri. | Kasir | Selesai |
+| FR-POS-001 | UI produk | Nama produk ditampilkan jelas dan tidak dipotong. | Kartu produk menampilkan nama lengkap, kategori, stok, harga, serta kontrol tambah/kurang quantity. Jika produk punya `gambar`, gambar dipakai; jika tidak, fallback inisial tetap tersedia. | Kasir | Selesai |
+| FR-POS-001 | Konfirmasi invoice | Notifikasi bawaan browser diganti modal custom. | Konfirmasi `Buat Invoice` tidak lagi memakai `window.confirm` bawaan Chrome, tetapi memakai modal yang sesuai UI aplikasi. | Kasir | Selesai |
+| FR-POS-003 | Database payment | Payment dipisah dari transaksi. | Ditambahkan tabel `payments` untuk menyimpan `transaction_id`, provider, method, status, amount, payment request ID, response code/body, kasir, dan waktu bayar. | Kasir, Manager, Konsumen | Selesai |
+| FR-POS-003 | Model payment | Model khusus payment dibuat. | Ditambahkan `models/paymentModel.js` untuk membuat record payment dan mengambil payment success terbaru per transaksi. | Sistem | Selesai |
+| FR-POS-003 | Pembayaran lokal | Cash, QRIS, dan transfer dicatat sebagai payment lokal. | Saat kasir memproses cash/QRIS/transfer, sistem membuat record `payments` dengan provider `local` dan status `success`. | Kasir, Manager | Selesai |
+| FR-POS-003 | SmartBank | Hasil SmartBank dicatat lebih detail. | Pembayaran SmartBank menyimpan status `success` atau `failed`, `payment_request_id`, endpoint/reference, response code, dan response body. | Kasir, Manager | Selesai di POS; endpoint SmartBank asli masih perlu disambungkan |
+| FR-POS-003 | UI manager payment | Riwayat payment dipisah dari dashboard utama. | Ditambahkan halaman `/manager/payments` dengan ringkasan total payment, success, failed, SmartBank, dan tabel detail payment. | Manager | Selesai |
+| FR-POS-003 | Sidebar manager | Menu manager dirapihkan. | Sidebar manager sekarang memisahkan `Dashboard`, `Payment`, dan `API Integrator`. Active state sidebar dibuat exact supaya halaman Payment tidak terbaca sebagai Dashboard. | Manager | Selesai |
+| FR-POS-004 | Guard status paid | Transaksi tidak bisa menjadi `paid` tanpa payment success. | `TransactionModel.payTransaction()` mengecek keberadaan `payments.status = 'success'` untuk transaksi dan metode pembayaran yang diproses. Jika tidak ada, update ke `paid` ditolak dengan alasan `payment_not_success`. | Sistem | Selesai |
+| FR-POS-004 | Struk kasir | Struk kasir menampilkan detail payment. | Struk kasir menampilkan status payment, provider, waktu bayar, request ID/reference, dan response code jika tersedia. | Kasir | Selesai |
+| FR-POS-004 | Struk konsumen | Struk konsumen menampilkan detail payment. | Struk konsumen dan PDF receipt ikut membaca payment success terbaru agar pembeli melihat bukti pembayaran yang sama. | Konsumen | Selesai |
+| FR-POS-005 | Validasi stok | Stok dicek saat invoice dan saat payment. | Sistem mengecek stok sebelum invoice dibuat dan mengecek ulang stok saat pembayaran. Stok hanya dipotong ketika transaksi berhasil `paid`. | Kasir, Sistem | Sudah sesuai |
+| FR-POS-006 | Analisis | Void transaksi belum dibuat. | Kebutuhan berikutnya adalah endpoint/UI void sebelum settlement dan permission supervisor/manager. | Kasir, Manager | Belum ada |
+| FR-POS-007 | Analisis | Audit log belum dibuat. | Kebutuhan berikutnya adalah tabel audit log untuk mencatat void, diskon, koreksi, aktor, alasan, data sebelum/sesudah, dan waktu aksi. | Manager, Sistem | Belum ada |
+
+## Validasi Hari Ini
+
+| Validasi | Hasil |
+| --- | --- |
+| `node --check` controller/model terkait | Lolos |
+| Compile EJS view kasir, konsumen, manager | Lolos |
+| Render dummy dashboard/payment/receipt | Lolos |
+| Migration database lokal | Tabel `payments` berhasil dibuat di database `warungpos` |
+| `npm test` | Berjalan, tetapi project masih berisi placeholder `No automated tests configured yet` |
+
 ## FR yang Berjalan tetapi Belum 100% Sesuai PRD
 
 | FR | Kekurangan Utama |
@@ -43,6 +74,14 @@ Dokumen ini merangkum kesesuaian aplikasi POS terhadap Functional Requirement Wa
 | Route kasir | `routes/kasirRoutes.js` |
 | Controller kasir | `controllers/kasirController.js` |
 | Model transaksi | `models/transactionModel.js` |
+| Model payment | `models/paymentModel.js` |
 | Schema database | `database/migrate_to_current_schema.sql` |
 | Dashboard kasir | `views/kasir/dashboard.ejs` |
 | Receipt kasir | `views/kasir/receipt.ejs` |
+| Receipt konsumen | `views/konsumen/receipt.ejs` |
+| Controller konsumen | `controllers/konsumenController.js` |
+| Route manager | `routes/managerRoutes.js` |
+| Controller manager | `controllers/managerController.js` |
+| Dashboard manager | `views/manager/dashboard.ejs` |
+| Payment manager | `views/manager/payments.ejs` |
+| Sidebar shared | `views/partials/sidebar.ejs` |
