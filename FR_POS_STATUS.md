@@ -8,7 +8,7 @@ Dokumen ini merangkum kesesuaian aplikasi POS terhadap Functional Requirement Wa
 | --- | --- | --- | --- |
 | FR-POS-001 | Kasir dapat membuat invoice dari produk dan jumlah. | Sesuai | Ada `POST /kasir/direct-sale`; kasir memilih produk dan quantity, lalu sistem membuat invoice berstatus `pending_payment`. |
 | FR-POS-002 | POS menggunakan sumber stok yang sama dengan Marketplace. | Sesuai di konteks project, belum sesuai PRD penuh | POS dan katalog konsumen memakai tabel `products.stock`. Namun PRD mengarah ke Inventory Module formal dengan `on_hand`, `reserved`, dan `available`, yang belum ada. |
-| FR-POS-003 | Sistem mendukung pembayaran SmartBank dan pembayaran tunai simulasi. | Sesuai | Ada metode `cash`, `qris`, `transfer`, dan `smartbank`. Semua hasil pembayaran dicatat di tabel `payments`; SmartBank menyimpan request ID, response, dan status success/failed. |
+| FR-POS-003 | Sistem mendukung pembayaran SmartBank dan pembayaran tunai simulasi. | Sesuai sebagian | Pembayaran lokal `cash`, `qris`, dan `transfer` sudah berjalan dan dicatat di tabel `payments`. Jalur SmartBank di sisi POS sudah siap, tetapi belum dinyatakan sesuai penuh karena belum terhubung ke endpoint SmartBank asli/simulator yang valid. |
 | FR-POS-004 | Invoice digital hanya `PAID` jika payment sukses. | Sesuai | Order konsumen berjalan `pending -> approved -> paid`, sedangkan direct sale kasir berjalan `pending_payment -> paid` setelah pembayaran diproses. |
 | FR-POS-005 | Sistem harus mencegah penjualan melebihi stock available. | Sesuai | Sistem mengecek stok sebelum transaksi/payment. Jika stok kurang, transaksi ditolak dengan alasan `insufficient_stock`. |
 | FR-POS-006 | Sistem mendukung void sebelum settlement dengan permission supervisor. | Belum ada | Belum ada route/controller/model untuk void transaksi dan belum ada role/permission supervisor. |
@@ -19,7 +19,6 @@ Dokumen ini merangkum kesesuaian aplikasi POS terhadap Functional Requirement Wa
 | FR | Alasan |
 | --- | --- |
 | FR-POS-001 | Kasir dapat membuat invoice direct sale dari produk dan quantity tanpa langsung menandai transaksi sebagai `paid`. |
-| FR-POS-003 | Cash, QRIS, transfer, dan SmartBank sudah dicatat sebagai payment terpisah dengan status success/failed. |
 | FR-POS-004 | Status `paid` baru diberikan setelah proses pembayaran berhasil. |
 | FR-POS-005 | Validasi stok sudah dilakukan sebelum transaksi/payment dan stok dipotong saat transaksi `paid`. |
 
@@ -34,7 +33,7 @@ Dokumen ini merangkum kesesuaian aplikasi POS terhadap Functional Requirement Wa
 | FR-POS-003 | Database payment | Payment dipisah dari transaksi. | Ditambahkan tabel `payments` untuk menyimpan `transaction_id`, provider, method, status, amount, payment request ID, response code/body, kasir, dan waktu bayar. | Kasir, Manager, Konsumen | Selesai |
 | FR-POS-003 | Model payment | Model khusus payment dibuat. | Ditambahkan `models/paymentModel.js` untuk membuat record payment dan mengambil payment success terbaru per transaksi. | Sistem | Selesai |
 | FR-POS-003 | Pembayaran lokal | Cash, QRIS, dan transfer dicatat sebagai payment lokal. | Saat kasir memproses cash/QRIS/transfer, sistem membuat record `payments` dengan provider `local` dan status `success`. | Kasir, Manager | Selesai |
-| FR-POS-003 | SmartBank | Hasil SmartBank dicatat lebih detail. | Pembayaran SmartBank menyimpan status `success` atau `failed`, `payment_request_id`, endpoint/reference, response code, dan response body. | Kasir, Manager | Selesai di POS; endpoint SmartBank asli masih perlu disambungkan |
+| FR-POS-003 | SmartBank | Jalur POS untuk SmartBank disiapkan, tetapi belum sesuai penuh. | POS sudah bisa mengambil endpoint aktif dari API Integrator dan menyimpan status `success` atau `failed`, `payment_request_id`, endpoint/reference, response code, dan response body. Namun integrasi belum selesai karena endpoint SmartBank asli/simulator valid belum tersambung. | Kasir, Manager | Sesuai sebagian |
 | FR-POS-003 | UI manager payment | Riwayat payment dipisah dari dashboard utama. | Ditambahkan halaman `/manager/payments` dengan ringkasan total payment, success, failed, SmartBank, dan tabel detail payment. | Manager | Selesai |
 | FR-POS-003 | Sidebar manager | Menu manager dirapihkan. | Sidebar manager sekarang memisahkan `Dashboard`, `Payment`, dan `API Integrator`. Active state sidebar dibuat exact supaya halaman Payment tidak terbaca sebagai Dashboard. | Manager | Selesai |
 | FR-POS-004 | Guard status paid | Transaksi tidak bisa menjadi `paid` tanpa payment success. | `TransactionModel.payTransaction()` mengecek keberadaan `payments.status = 'success'` untuk transaksi dan metode pembayaran yang diproses. Jika tidak ada, update ke `paid` ditolak dengan alasan `payment_not_success`. | Sistem | Selesai |
@@ -59,6 +58,7 @@ Dokumen ini merangkum kesesuaian aplikasi POS terhadap Functional Requirement Wa
 | FR | Kekurangan Utama |
 | --- | --- |
 | FR-POS-002 | Masih memakai `products.stock`, belum Inventory Module shared formal. |
+| FR-POS-003 | Pembayaran lokal sudah berjalan, tetapi SmartBank belum terintegrasi penuh dengan endpoint asli/simulator valid. |
 
 ## FR yang Belum Ada
 
