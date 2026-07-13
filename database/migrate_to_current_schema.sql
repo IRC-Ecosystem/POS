@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS `transactions` (
   `subtotal` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `fee` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `grand_total` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-  `status` ENUM('pending', 'approved', 'paid', 'rejected') NOT NULL DEFAULT 'pending',
+  `status` ENUM('pending', 'pending_payment', 'approved', 'paid', 'rejected') NOT NULL DEFAULT 'pending',
   `payment_method` VARCHAR(50) DEFAULT NULL,
   `stock_deducted` TINYINT(1) NOT NULL DEFAULT 0,
   `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
@@ -112,6 +112,9 @@ CREATE TABLE IF NOT EXISTS `transactions` (
 
 ALTER TABLE `transactions`
   MODIFY COLUMN `user_id` INT NULL;
+
+ALTER TABLE `transactions`
+  MODIFY COLUMN `status` ENUM('pending', 'pending_payment', 'approved', 'paid', 'rejected') NOT NULL DEFAULT 'pending';
 
 SET @transactions_add_stock_deducted = (
   SELECT IF(

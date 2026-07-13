@@ -175,9 +175,9 @@ const buildDashboardStats = (transactions) => {
       accent: "from-blue-500 to-blue-600"
     },
     {
-      label: "Approved",
-      value: transactions.filter((transaction) => transaction.status === "approved").length,
-      description: "Siap dibayar",
+      label: "Siap Dibayar",
+      value: transactions.filter((transaction) => ["approved", "pending_payment"].includes(transaction.status)).length,
+      description: "Approved/invoice",
       accent: "from-sky-500 to-blue-500"
     },
     {
@@ -195,15 +195,6 @@ const buildDashboardStats = (transactions) => {
   ];
 };
 
-const buildStatusChart = (transactions) => {
-  const labels = ["pending", "approved", "paid", "rejected"];
-
-  return {
-    labels: ["Pending", "Approved", "Paid", "Rejected"],
-    values: labels.map((status) => transactions.filter((transaction) => transaction.status === status).length)
-  };
-};
-
 exports.requireKasir = (req, res, next) => {
   if (!req.session.user) {
     return res.redirect("/login");
@@ -217,6 +208,7 @@ exports.requireKasir = (req, res, next) => {
 };
 
 exports.index = async (req, res) => {
+  const viewMode = req.path === "/kasir/incoming" ? "incoming" : "transaction";
   const productPageNumber = Number(req.query.productPage) || 1;
   const transactionPageNumber = Number(req.query.transactionPage) || 1;
   const productLimit = 6;
@@ -243,42 +235,33 @@ exports.index = async (req, res) => {
 
     return res.render("kasir/dashboard", {
       pageTitle: "Kasir Dashboard",
+      viewMode,
       transactions: transactionPage.rows,
       transactionPagination: transactionPage.pagination,
       products: productPage.rows.map(normalizeProduct),
       productPagination,
-      stats: buildDashboardStats(transactions),
-      statusChart: buildStatusChart(transactions)
+      stats: buildDashboardStats(transactions)
     });
   } catch (error) {
     console.error("Kasir dashboard error:", error);
 
     return res.status(500).render("kasir/dashboard", {
       pageTitle: "Kasir Dashboard",
+      viewMode,
       transactions: [],
       transactionPagination: buildPagination({ page: 1, limit: transactionLimit, total: 0 }),
       products: [],
       productPagination: buildPagination({ page: 1, limit: productLimit, total: 0 }),
       stats: buildDashboardStats([]),
-      statusChart: buildStatusChart([]),
       dashboardError: "Gagal memuat daftar transaksi."
     });
   }
 };
 
 exports.createDirectSale = async (req, res) => {
-  const paymentMethod = req.body.payment_method ? req.body.payment_method.trim().toLowerCase() : "";
   const productIds = Array.isArray(req.body.product_ids)
     ? req.body.product_ids
     : [req.body.product_ids].filter(Boolean);
-
-  if (!PAYMENT_METHODS.includes(paymentMethod) || paymentMethod === "smartbank") {
-    setFlash(req, {
-      type: "error",
-      message: "Metode pembayaran transaksi kasir tidak valid."
-    });
-    return res.redirect("/kasir");
-  }
 
   try {
     const products = await ProductModel.getAll();
@@ -311,14 +294,14 @@ exports.createDirectSale = async (req, res) => {
 
     const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
     const fee = calculateFee(subtotal);
-    const result = await TransactionModel.createDirectPaidTransaction({
+    const result = await TransactionModel.createDirectInvoiceTransaction({
       transaction: {
         invoice: generateInvoice(),
         cashier_id: req.session.user.id,
         subtotal,
         fee,
         grand_total: subtotal + fee,
-        payment_method: paymentMethod
+        payment_method: null
       },
       items
     });
@@ -337,10 +320,10 @@ exports.createDirectSale = async (req, res) => {
 
     setFlash(req, {
       type: "success",
-      message: "Transaksi kasir berhasil dibuat."
+      message: "Invoice kasir berhasil dibuat. Silakan proses pembayaran."
     });
 
-    return res.redirect(`/kasir/receipt/${result.transactionId}`);
+    return res.redirect("/kasir");
   } catch (error) {
     console.error("Create direct sale error:", error);
     setFlash(req, {
@@ -485,10 +468,10 @@ exports.payTransaction = async (req, res) => {
         return res.redirect("/kasir");
       }
 
-      if (transaction.status !== "approved") {
+      if (!["approved", "pending_payment"].includes(transaction.status)) {
         setFlash(req, {
           type: "error",
-          message: "Hanya transaksi approved yang bisa dibayar."
+          message: "Hanya transaksi approved atau pending payment yang bisa dibayar."
         });
         return res.redirect("/kasir");
       }
@@ -535,7 +518,7 @@ exports.payTransaction = async (req, res) => {
       }
 
       if (result.reason === "invalid_status") {
-        message = "Hanya transaksi approved yang bisa dibayar.";
+        message = "Hanya transaksi approved atau pending payment yang bisa dibayar.";
       }
 
       if (result.reason === "product_not_found") {
@@ -591,10 +574,10 @@ exports.smartBankPayment = async (req, res) => {
       });
     }
 
-    if (transaction.status !== "approved") {
+    if (!["approved", "pending_payment"].includes(transaction.status)) {
       return res.status(400).json({
         success: false,
-        message: "Hanya transaksi approved yang bisa diproses ke SmartBank."
+        message: "Hanya transaksi approved atau pending payment yang bisa diproses ke SmartBank."
       });
     }
 
@@ -676,6 +659,14 @@ exports.receipt = async (req, res) => {
       setFlash(req, {
         type: "error",
         message: "Transaksi tidak ditemukan."
+      });
+      return res.redirect("/kasir");
+    }
+
+    if (transaction.status !== "paid") {
+      setFlash(req, {
+        type: "error",
+        message: "Struk hanya tersedia untuk transaksi yang sudah paid."
       });
       return res.redirect("/kasir");
     }

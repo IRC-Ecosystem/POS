@@ -5,6 +5,7 @@ const { requireRole } = require("../middleware/auth");
 const router = express.Router();
 
 router.get("/kasir", requireRole("kasir"), kasirController.index);
+router.get("/kasir/incoming", requireRole("kasir"), kasirController.index);
 router.get("/kasir/receipt/:id", requireRole("kasir"), kasirController.receipt);
 router.post("/kasir/direct-sale", requireRole("kasir"), kasirController.createDirectSale);
 router.post("/kasir/approve/:id", requireRole("kasir"), kasirController.approveTransaction);

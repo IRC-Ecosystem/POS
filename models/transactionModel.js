@@ -39,6 +39,8 @@ const getSingle = async (sql, values = []) => {
   return results[0] || null;
 };
 
+const PAYABLE_STATUSES = ["approved", "pending_payment"];
+
 const getManagerDateFilter = (filter) => {
   if (filter === "today") {
     return "DATE(t.created_at) = CURDATE()";
@@ -130,7 +132,7 @@ exports.createTransactionWithItems = async ({ transaction, items }) => {
   }
 };
 
-exports.createDirectPaidTransaction = async ({ transaction, items }) => {
+exports.createDirectInvoiceTransaction = async ({ transaction, items }) => {
   try {
     await beginTransaction();
 
@@ -163,7 +165,7 @@ exports.createDirectPaidTransaction = async ({ transaction, items }) => {
     const transactionResult = await query(
       `
         INSERT INTO transactions (invoice, user_id, cashier_id, subtotal, fee, grand_total, status, payment_method, stock_deducted, created_at)
-        VALUES (?, NULL, ?, ?, ?, ?, 'paid', ?, 1, NOW())
+        VALUES (?, NULL, ?, ?, ?, ?, 'pending_payment', ?, 0, NOW())
       `,
       [
         transaction.invoice,
@@ -191,17 +193,6 @@ exports.createDirectPaidTransaction = async ({ transaction, items }) => {
       `,
       [itemValues]
     );
-
-    for (const item of items) {
-      await query(
-        `
-          UPDATE products
-          SET stock = stock - ?
-          WHERE id = ?
-        `,
-        [item.qty, item.product_id]
-      );
-    }
 
     await commit();
 
@@ -400,7 +391,7 @@ exports.validatePayableTransaction = async (transactionId) => {
     return { success: false, reason: "not_found" };
   }
 
-  if (transaction.status !== "approved") {
+  if (!PAYABLE_STATUSES.includes(transaction.status)) {
     return { success: false, reason: "invalid_status", transaction };
   }
 
@@ -461,7 +452,7 @@ exports.payTransaction = async ({ transactionId, cashierId, paymentMethod }) => 
       return { success: false, reason: "not_found" };
     }
 
-    if (transaction.status !== "approved") {
+    if (!PAYABLE_STATUSES.includes(transaction.status)) {
       await rollback();
       return { success: false, reason: "invalid_status", transaction };
     }

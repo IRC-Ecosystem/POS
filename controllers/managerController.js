@@ -30,7 +30,7 @@ const API_ENDPOINTS = [
   { method: "POST", path: "/operator/products/:id/delete", purpose: "Menghapus produk berdasarkan ID.", direction: "operatorController.deleteProduct", access: "Operator", response: "Redirect" },
   { method: "GET", path: "/kasir", purpose: "Dashboard kasir untuk direct sale, approval pesanan, pembayaran, dan ringkasan transaksi.", direction: "kasirController.index", access: "Kasir", response: "HTML" },
   { method: "GET", path: "/kasir/receipt/:id", purpose: "Menampilkan struk transaksi kasir berdasarkan ID transaksi.", direction: "kasirController.receipt", access: "Kasir", response: "HTML" },
-  { method: "POST", path: "/kasir/direct-sale", purpose: "Membuat transaksi langsung oleh kasir dan langsung memotong stok.", direction: "kasirController.createDirectSale", access: "Kasir", response: "Redirect" },
+  { method: "POST", path: "/kasir/direct-sale", purpose: "Membuat invoice transaksi langsung oleh kasir dengan status pending payment.", direction: "kasirController.createDirectSale", access: "Kasir", response: "Redirect" },
   { method: "POST", path: "/kasir/approve/:id", purpose: "Menyetujui transaksi konsumen berstatus pending.", direction: "kasirController.approveTransaction", access: "Kasir", response: "Redirect" },
   { method: "POST", path: "/kasir/reject/:id", purpose: "Menolak transaksi konsumen berstatus pending.", direction: "kasirController.rejectTransaction", access: "Kasir", response: "Redirect" },
   { method: "POST", path: "/kasir/pay/:id", purpose: "Memproses pembayaran transaksi approved dan mengubah status menjadi paid.", direction: "kasirController.payTransaction", access: "Kasir", response: "Redirect" },
@@ -379,7 +379,6 @@ const getApiBodyFields = (method, path) => {
       { name: "stock", type: "number", required: true, example: "40", description: "Jumlah stok terbaru." }
     ],
     "/kasir/direct-sale": [
-      { name: "payment_method", type: "string", required: true, example: "cash", description: "Pilihan: cash, qris, transfer." },
       { name: "product_ids", type: "array", required: true, example: "1,2", description: "ID produk yang dipilih." },
       { name: "qty_{productId}", type: "number", required: true, example: "2", description: "Quantity untuk tiap produk." }
     ],
