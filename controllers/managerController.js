@@ -1,5 +1,6 @@
 const TransactionModel = require("../models/transactionModel");
 const ApiIntegrationModel = require("../models/apiIntegrationModel");
+const PaymentModel = require("../models/paymentModel");
 const { callExternalIntegration } = require("../services/apiIntegrationClient");
 const { createObjectCsvStringifier } = require("csv-writer");
 const PDFDocument = require("pdfkit");
@@ -16,6 +17,7 @@ const API_ENDPOINTS = [
   { method: "POST", path: "/register", purpose: "Membuat akun baru dengan role konsumen.", direction: "authController.register", access: "Publik", response: "Redirect / HTML error" },
   { method: "POST", path: "/logout", purpose: "Menghapus session login.", direction: "authController.logout", access: "Login", response: "Redirect" },
   { method: "GET", path: "/manager", purpose: "Dashboard KPI, grafik penjualan, transaksi terbaru, dan monitor kasir.", direction: "managerController.index", access: "Manager", response: "HTML" },
+  { method: "GET", path: "/manager/payments", purpose: "Menampilkan riwayat payment terpisah dari transaksi untuk audit pembayaran.", direction: "managerController.payments", access: "Manager", response: "HTML" },
   { method: "GET", path: "/manager/api-integrator", purpose: "Menampilkan halaman dokumentasi endpoint ala Swagger.", direction: "managerController.apiIntegrator", access: "Manager", response: "HTML" },
   { method: "GET", path: "/manager/api-integrator/local", purpose: "Menampilkan dokumentasi endpoint lokal POS.", direction: "managerController.localApiIntegrator", access: "Manager", response: "HTML" },
   { method: "GET", path: "/manager/api-integrator/:provider", purpose: "Menampilkan halaman pengelolaan endpoint API eksternal sesuai provider.", direction: "managerController.providerApiIntegrator", access: "Manager", response: "HTML" },
@@ -1244,6 +1246,59 @@ exports.index = async (req, res) => {
         year: "numeric"
       }).format(new Date()),
       dashboardError: "Gagal memuat dashboard manager dari database."
+    });
+  }
+};
+
+exports.payments = async (req, res) => {
+  try {
+    const payments = await PaymentModel.getRecent({ limit: 50, offset: 0 });
+    const normalizedPayments = payments.map((payment) => ({
+      ...payment,
+      invoice: payment.invoice || "-",
+      cashier_name: payment.cashier_name || payment.cashier_email || "-",
+      amount_formatted: formatCurrency(payment.amount),
+      paid_at_formatted: payment.paid_at ? formatDate(payment.paid_at) : "-",
+      created_at_formatted: formatDate(payment.created_at),
+      reference_label: payment.payment_request_id || payment.provider_reference || "-"
+    }));
+    const paymentSummary = {
+      total: normalizedPayments.length,
+      success: normalizedPayments.filter((payment) => payment.status === "success").length,
+      failed: normalizedPayments.filter((payment) => payment.status === "failed").length,
+      smartbank: normalizedPayments.filter((payment) => payment.provider === "smartbank").length
+    };
+
+    return res.render("manager/payments", {
+      pageTitle: "Payment Manager",
+      payments: normalizedPayments,
+      paymentSummary,
+      todayLabel: new Intl.DateTimeFormat("id-ID", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        year: "numeric"
+      }).format(new Date())
+    });
+  } catch (error) {
+    console.error("Manager payments error:", error);
+
+    return res.status(500).render("manager/payments", {
+      pageTitle: "Payment Manager",
+      payments: [],
+      paymentSummary: {
+        total: 0,
+        success: 0,
+        failed: 0,
+        smartbank: 0
+      },
+      todayLabel: new Intl.DateTimeFormat("id-ID", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        year: "numeric"
+      }).format(new Date()),
+      dashboardError: "Gagal memuat riwayat pembayaran."
     });
   }
 };

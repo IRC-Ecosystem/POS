@@ -9,7 +9,8 @@
 
   <nav class="space-y-2 px-4">
     <% (sidebarLinks || []).forEach((link) => { %>
-      <% const isActive = currentPath === link.href || (link.matchPrefix && currentPath.startsWith(link.matchPrefix)); %>
+      <% const hrefPath = link.href ? link.href.split("?")[0].split("#")[0] : ""; %>
+      <% const isActive = link.exact ? currentPath === hrefPath : (currentPath === hrefPath || (link.matchPrefix && currentPath.startsWith(link.matchPrefix))); %>
       <% if (link.href) { %>
         <a
           href="<%= link.href %>"

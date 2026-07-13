@@ -4,7 +4,8 @@
       sidebarTitle: "Manager Panel",
       sidebarDescription: "Pantau KPI, transaksi, performa kasir, dan export laporan dari satu dashboard.",
       sidebarLinks: [
-        { href: `/manager?filter=${activeFilter}#dashboard`, label: "Dashboard", short: "DB", matchPrefix: "/manager" },
+        { href: `/manager?filter=${activeFilter}#dashboard`, label: "Dashboard", short: "DB", exact: true },
+        { href: "/manager/payments", label: "Payment", short: "PY", exact: true },
         { href: "/manager/api-integrator", label: "API Integrator", short: "API", matchPrefix: "/manager/api-integrator" }
       ],
       currentPath,

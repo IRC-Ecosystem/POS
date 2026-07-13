@@ -5,6 +5,7 @@ const { requireRole } = require("../middleware/auth");
 const router = express.Router();
 
 router.get("/manager", requireRole("manager"), managerController.index);
+router.get("/manager/payments", requireRole("manager"), managerController.payments);
 router.get("/manager/api-integrator", requireRole("manager"), managerController.apiIntegrator);
 router.get("/manager/api-integrator/local", requireRole("manager"), managerController.localApiIntegrator);
 router.get("/manager/api-integrator/:provider", requireRole("manager"), managerController.providerApiIntegrator);

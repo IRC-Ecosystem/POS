@@ -1,6 +1,7 @@
 const ProductModel = require("../models/productModel");
 const TransactionModel = require("../models/transactionModel");
 const UserModel = require("../models/userModel");
+const PaymentModel = require("../models/paymentModel");
 const PDFDocument = require("pdfkit");
 const bcrypt = require("bcrypt");
 
@@ -117,7 +118,10 @@ const getReceiptData = async (invoice, userId) => {
     return null;
   }
 
-  const items = await TransactionModel.getItemsByTransactionId(transaction.id);
+  const [items, payment] = await Promise.all([
+    TransactionModel.getItemsByTransactionId(transaction.id),
+    PaymentModel.getLatestSuccessfulByTransactionId(transaction.id)
+  ]);
 
   return {
     transaction: {
@@ -128,6 +132,11 @@ const getReceiptData = async (invoice, userId) => {
       fee_formatted: formatCurrency(transaction.fee),
       created_at_formatted: formatDateTime(transaction.created_at)
     },
+    payment: payment ? {
+      ...payment,
+      amount_formatted: formatCurrency(payment.amount),
+      paid_at_formatted: payment.paid_at ? formatDateTime(payment.paid_at) : "-"
+    } : null,
     items: items.map((item) => ({
       ...item,
       price_formatted: formatCurrency(item.price),
@@ -716,6 +725,7 @@ exports.receipt = async (req, res) => {
     return res.render("konsumen/receipt", {
       pageTitle: "Struk Transaksi",
       transaction: receiptData.transaction,
+      payment: receiptData.payment,
       items: receiptData.items
     });
   } catch (error) {
@@ -746,7 +756,7 @@ exports.downloadReceipt = async (req, res) => {
       return redirectUnpaidToStatus(req, res, receiptData.transaction);
     }
 
-    const { transaction, items } = receiptData;
+    const { transaction, items, payment } = receiptData;
     const doc = new PDFDocument({ margin: 36, size: [226, 640] });
 
     res.setHeader("Content-Type", "application/pdf");
@@ -764,6 +774,12 @@ exports.downloadReceipt = async (req, res) => {
     doc.text(`Tanggal : ${transaction.created_at_formatted}`);
     doc.text(`Status  : ${transaction.status_meta.label}`);
     doc.text(`Bayar   : ${transaction.payment_method || "-"}`);
+    if (payment) {
+      doc.text(`Payment : ${payment.status} / ${payment.provider}`);
+      if (payment.payment_request_id) {
+        doc.text(`Ref     : ${payment.payment_request_id}`);
+      }
+    }
     doc.text("--------------------------------");
     doc.moveDown(0.4);
 

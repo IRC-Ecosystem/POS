@@ -457,6 +457,24 @@ exports.payTransaction = async ({ transactionId, cashierId, paymentMethod }) => 
       return { success: false, reason: "invalid_status", transaction };
     }
 
+    const successfulPayment = await getSingle(
+      `
+        SELECT id
+        FROM payments
+        WHERE transaction_id = ?
+          AND method = ?
+          AND status = 'success'
+        ORDER BY paid_at DESC, id DESC
+        LIMIT 1
+      `,
+      [transactionId, paymentMethod]
+    );
+
+    if (!successfulPayment) {
+      await rollback();
+      return { success: false, reason: "payment_not_success" };
+    }
+
     if (Number(transaction.stock_deducted || 0) === 0) {
       const items = await query(
         `

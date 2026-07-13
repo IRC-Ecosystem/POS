@@ -147,6 +147,29 @@ CREATE TABLE IF NOT EXISTS `transaction_items` (
   CONSTRAINT `fk_transaction_items_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `payments` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `transaction_id` INT NOT NULL,
+  `provider` ENUM('local', 'smartbank') NOT NULL DEFAULT 'local',
+  `method` VARCHAR(50) NOT NULL,
+  `status` ENUM('pending', 'success', 'failed') NOT NULL DEFAULT 'pending',
+  `amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `payment_request_id` VARCHAR(100) DEFAULT NULL,
+  `provider_reference` VARCHAR(150) DEFAULT NULL,
+  `response_code` INT DEFAULT NULL,
+  `response_body` MEDIUMTEXT NULL,
+  `cashier_id` INT NULL,
+  `paid_at` DATETIME NULL,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_payments_transaction` (`transaction_id`),
+  KEY `idx_payments_status` (`status`),
+  KEY `idx_payments_method` (`method`),
+  KEY `idx_payments_cashier` (`cashier_id`),
+  CONSTRAINT `fk_payments_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_payments_cashier` FOREIGN KEY (`cashier_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET @transaction_items_add_price = (
   SELECT IF(
     EXISTS (

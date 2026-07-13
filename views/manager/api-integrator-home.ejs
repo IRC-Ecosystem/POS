@@ -4,7 +4,8 @@
       sidebarTitle: "Manager Panel",
       sidebarDescription: "Pusat pengelolaan endpoint lokal dan integrasi eksternal WarungPOS.",
       sidebarLinks: [
-        { href: "/manager", label: "Dashboard", short: "DB" },
+        { href: "/manager", label: "Dashboard", short: "DB", exact: true },
+        { href: "/manager/payments", label: "Payment", short: "PY", exact: true },
         { href: "/manager/api-integrator", label: "API Integrator", short: "API", matchPrefix: "/manager/api-integrator" }
       ],
       currentPath,

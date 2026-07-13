@@ -43,7 +43,47 @@
           <dt class="text-slate-500">Pembayaran</dt>
           <dd class="text-right font-medium text-slate-950"><%= transaction.payment_method || '-' %></dd>
         </div>
+        <% if (payment) { %>
+          <div class="flex justify-between gap-4">
+            <dt class="text-slate-500">Status Payment</dt>
+            <dd class="text-right font-medium uppercase text-emerald-700"><%= payment.status %></dd>
+          </div>
+          <div class="flex justify-between gap-4">
+            <dt class="text-slate-500">Provider</dt>
+            <dd class="text-right font-medium uppercase text-slate-950"><%= payment.provider %></dd>
+          </div>
+          <div class="flex justify-between gap-4">
+            <dt class="text-slate-500">Waktu Bayar</dt>
+            <dd class="text-right font-medium text-slate-950"><%= payment.paid_at_formatted %></dd>
+          </div>
+        <% } %>
       </dl>
+
+      <% if (payment && (payment.payment_request_id || payment.provider_reference || payment.response_code)) { %>
+        <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs">
+          <p class="font-semibold uppercase tracking-[0.18em] text-slate-500">Detail Payment</p>
+          <dl class="mt-3 space-y-2">
+            <% if (payment.payment_request_id) { %>
+              <div class="flex justify-between gap-3">
+                <dt class="text-slate-500">Request ID</dt>
+                <dd class="break-all text-right font-medium text-slate-900"><%= payment.payment_request_id %></dd>
+              </div>
+            <% } %>
+            <% if (payment.provider_reference) { %>
+              <div class="flex justify-between gap-3">
+                <dt class="text-slate-500">Reference</dt>
+                <dd class="break-all text-right font-medium text-slate-900"><%= payment.provider_reference %></dd>
+              </div>
+            <% } %>
+            <% if (payment.response_code) { %>
+              <div class="flex justify-between gap-3">
+                <dt class="text-slate-500">Response</dt>
+                <dd class="text-right font-medium text-slate-900"><%= payment.response_code %></dd>
+              </div>
+            <% } %>
+          </dl>
+        </div>
+      <% } %>
 
       <div class="my-5 border-t border-dashed border-slate-300"></div>
 
