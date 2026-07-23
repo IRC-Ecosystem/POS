@@ -70,6 +70,35 @@
           </aside>
 
           <section class="space-y-8 p-6 sm:p-8">
+            <div class="rounded-3xl border <%= smartBank?.linked ? 'border-emerald-200 bg-emerald-50' : 'border-blue-200 bg-blue-50' %> p-6">
+              <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-[0.24em] <%= smartBank?.linked ? 'text-emerald-700' : 'text-blue-700' %>">SmartBank Wallet</p>
+                  <h3 class="mt-2 text-xl font-semibold text-slate-950"><%= smartBank?.linked ? 'Wallet terhubung' : 'Hubungkan untuk pembayaran' %></h3>
+                  <p class="mt-2 text-sm text-slate-600"><%= smartBank?.linked ? `Wallet ${smartBank.walletId}` : 'OTP akan muncul hanya di Inbox SmartBank Anda. Pembayaran berikutnya menggunakan PIN transaksi SmartBank.' %></p>
+                  <% if (smartBank?.error) { %><p class="mt-2 text-sm text-rose-700"><%= smartBank.error %></p><% } %>
+                </div>
+                <% if (smartBank?.linked) { %><span class="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">AKTIF</span><% } %>
+              </div>
+
+              <% if (!smartBank?.linked) { %>
+                <% if (!smartBank?.requestId) { %>
+                  <form action="/konsumen/smartbank/otp/request" method="POST" class="mt-5">
+                    <button class="rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700" type="submit">Kirim OTP ke Inbox SmartBank</button>
+                  </form>
+                <% } else if (!smartBank?.otpVerified) { %>
+                  <form action="/konsumen/smartbank/otp/verify" method="POST" class="mt-5 flex flex-col gap-3 sm:flex-row">
+                    <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="6 digit OTP" class="rounded-xl border border-blue-200 bg-white px-4 py-3 font-mono tracking-[0.25em] outline-none focus:border-blue-500" required>
+                    <button class="rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700" type="submit">Verifikasi OTP</button>
+                  </form>
+                <% } else { %>
+                  <form action="/konsumen/smartbank/link" method="POST" class="mt-5">
+                    <button class="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700" type="submit">Konfirmasi Hubungkan Wallet</button>
+                  </form>
+                <% } %>
+              <% } %>
+            </div>
+
             <div>
               <h3 class="text-2xl font-semibold text-slate-950">Informasi Pribadi</h3>
               <p class="mt-2 text-sm text-slate-500">Perbarui data pribadi Anda agar informasi akun tetap sesuai.</p>
