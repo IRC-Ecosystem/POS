@@ -6,6 +6,7 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 
 const dbConfig = {
   host: process.env.DB_HOST || "localhost",
+  port: Number(process.env.DB_PORT) || 3306,
   user: process.env.DB_USER || "root",
   password: process.env.DB_PASS || "",
   multipleStatements: true
@@ -130,45 +131,11 @@ const seedTransactions = async (connection) => {
 };
 
 const seedApiIntegrations = async (connection) => {
+  // Pembayaran SmartBank sekarang selalu melewati Connector native. Hapus
+  // template Gateway lama agar tidak dapat diaktifkan dan melewati linkage/PIN.
   await connection.execute(
-    `
-      INSERT INTO api_integrations
-        (provider, name, method, base_url, path, headers_json, query_json, body_json, expected_status, description, status, is_active)
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'untested', 0
-      WHERE NOT EXISTS (
-        SELECT 1 FROM api_integrations WHERE provider = ? AND name = ? LIMIT 1
-      )
-    `,
-    [
-      "smartbank",
-      "SmartBank Create Payment Request",
-      "POST",
-      process.env.SMARTBANK_BASE_URL || "http://localhost:4000",
-      "/api/bank/payment-requests",
-      JSON.stringify({
-        Authorization: "Bearer {{token}}",
-        "Idempotency-Key": "{{idempotency_key}}"
-      }),
-      JSON.stringify({}),
-      JSON.stringify({
-        source_app: "POS",
-        payer_wallet_id: "{{payer_wallet_id}}",
-        payee_wallet_id: "{{payee_wallet_id}}",
-        gross_amount: "{{grand_total}}",
-        description: "Pembayaran POS {{invoice}}",
-        metadata: {
-          invoice: "{{invoice}}",
-          transaction_id: "{{transaction_id}}"
-        },
-        expires_at: "{{expires_at}}"
-      }),
-      201,
-      "Membuat payment request SmartBank dari transaksi POS. Isi SMARTBANK_TOKEN, SMARTBANK_PAYER_WALLET_ID, dan SMARTBANK_PAYEE_WALLET_ID di .env sebelum test.",
-      "smartbank",
-      "SmartBank Create Payment Request"
-    ]
+    "DELETE FROM api_integrations WHERE provider = 'smartbank' AND name = 'SmartBank Create Payment Request'"
   );
-
   await connection.execute(
     `
       INSERT INTO api_integrations
@@ -182,13 +149,13 @@ const seedApiIntegrations = async (connection) => {
       "smartbank",
       "SmartBank Health Check",
       "GET",
-      process.env.SMARTBANK_BASE_URL || "http://localhost:4000",
+      process.env.SMARTBANK_CONNECTOR_URL || "http://localhost:5000",
       "/health",
       JSON.stringify({}),
       JSON.stringify({}),
       JSON.stringify({}),
       200,
-      "Mengecek apakah SmartBank API Gateway sedang aktif.",
+      "Mengecek apakah SmartBank Connector sedang aktif. Pembayaran memakai integrasi native POS, bukan endpoint generik ini.",
       "smartbank",
       "SmartBank Health Check"
     ]

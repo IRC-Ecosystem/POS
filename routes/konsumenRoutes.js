@@ -14,7 +14,11 @@ router.post("/konsumen/cart/:id/add", requireRole("konsumen"), konsumenControlle
 router.post("/konsumen/cart/:id/qty", requireRole("konsumen"), konsumenController.updateCartQuantity);
 router.post("/konsumen/cart/:id/remove", requireRole("konsumen"), konsumenController.removeFromCart);
 router.post("/konsumen/checkout", requireRole("konsumen"), konsumenController.checkout);
+router.post("/konsumen/waiting/:invoice/pay-smartbank", requireRole("konsumen"), konsumenController.payWithSmartBank);
 router.post("/konsumen/profile", requireRole("konsumen"), konsumenController.updateProfile);
 router.post("/konsumen/profile/password", requireRole("konsumen"), konsumenController.updatePassword);
+router.post("/konsumen/smartbank/otp/request", requireRole("konsumen"), konsumenController.requestSmartBankOtp);
+router.post("/konsumen/smartbank/otp/verify", requireRole("konsumen"), konsumenController.verifySmartBankOtp);
+router.post("/konsumen/smartbank/link", requireRole("konsumen"), konsumenController.linkSmartBankWallet);
 
 module.exports = router;

@@ -6,6 +6,10 @@ const router = express.Router();
 
 router.get("/manager", requireRole("manager"), managerController.index);
 router.get("/manager/payments", requireRole("manager"), managerController.payments);
+router.get("/manager/smartbank-wallet", requireRole("manager"), managerController.smartBankWallet);
+router.post("/manager/smartbank-wallet/otp/request", requireRole("manager"), managerController.requestSmartBankMerchantOtp);
+router.post("/manager/smartbank-wallet/otp/verify", requireRole("manager"), managerController.verifySmartBankMerchantOtp);
+router.post("/manager/smartbank-wallet/link", requireRole("manager"), managerController.linkSmartBankMerchantWallet);
 router.get("/manager/api-integrator", requireRole("manager"), managerController.apiIntegrator);
 router.get("/manager/api-integrator/local", requireRole("manager"), managerController.localApiIntegrator);
 router.get("/manager/api-integrator/:provider", requireRole("manager"), managerController.providerApiIntegrator);

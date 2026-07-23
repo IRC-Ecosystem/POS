@@ -4,6 +4,7 @@ const UserModel = require("../models/userModel");
 const PaymentModel = require("../models/paymentModel");
 const PDFDocument = require("pdfkit");
 const bcrypt = require("bcrypt");
+const SmartBankConnector = require("../services/smartBankConnectorClient");
 
 const setFlash = (req, payload) => {
   req.session.flash = payload;
@@ -175,12 +176,14 @@ const renderProfilePage = (res, {
   profileError = null,
   passwordError = null,
   oldInput = {},
-  passwordInput = {}
+  passwordInput = {},
+  smartBank = { linked: false }
 }) => res.render("konsumen/profile", {
   pageTitle: "Profil Saya",
   profile,
   profileError,
   passwordError,
+  smartBank,
   oldInput: {
     nama: oldInput.nama || profile?.nama || "",
     email: oldInput.email || profile?.email || "",
@@ -277,7 +280,18 @@ exports.profile = async (req, res) => {
       return res.redirect("/login");
     }
 
-    return renderProfilePage(res, { profile: user });
+    let smartBank = { linked: false, requestId: req.session.smartBankLink?.requestId || null, otpVerified: Boolean(req.session.smartBankLink?.verificationToken) };
+    try {
+      const linkage = await SmartBankConnector.getLinkage(user.id);
+      smartBank = { linked: true, walletId: linkage.smartbank_wallet_id };
+      delete req.session.smartBankLink;
+    } catch (error) {
+      if (error.code !== "USER_NOT_LINKED" && error.code !== "CONNECTOR_NOT_CONFIGURED") {
+        smartBank.error = error.message;
+      }
+    }
+
+    return renderProfilePage(res, { profile: user, smartBank });
   } catch (error) {
     console.error("Konsumen profile error:", error);
 
@@ -298,6 +312,55 @@ exports.profile = async (req, res) => {
       }
     });
   }
+};
+
+exports.requestSmartBankOtp = async (req, res) => {
+  try {
+    const user = await UserModel.findById(req.session.user.id);
+    if (!user?.phone) {
+      setFlash(req, { type: "error", message: "Isi nomor HP profil terlebih dahulu sebelum menghubungkan SmartBank." });
+      return res.redirect("/konsumen/profile");
+    }
+    const result = await SmartBankConnector.requestLinkOtp(user.phone, user.id);
+    req.session.smartBankLink = { requestId: result.request_id, expiresAt: result.expires_at };
+    setFlash(req, { type: "success", message: "OTP dikirim ke Inbox SmartBank. Masukkan kode 6 digit untuk melanjutkan." });
+  } catch (error) {
+    setFlash(req, { type: "error", message: error.message || "Gagal meminta OTP SmartBank." });
+  }
+  return req.session.save(() => res.redirect("/konsumen/profile"));
+};
+
+exports.verifySmartBankOtp = async (req, res) => {
+  const requestId = req.session.smartBankLink?.requestId;
+  const code = String(req.body.code || "").trim();
+  if (!requestId || !/^\d{6}$/.test(code)) {
+    setFlash(req, { type: "error", message: "Request OTP tidak tersedia atau kode OTP tidak valid." });
+    return res.redirect("/konsumen/profile");
+  }
+  try {
+    const result = await SmartBankConnector.verifyLinkOtp(requestId, code, req.session.user.id);
+    req.session.smartBankLink.verificationToken = result.verification_token;
+    setFlash(req, { type: "success", message: "OTP valid. Konfirmasi untuk menghubungkan akun POS ke SmartBank." });
+  } catch (error) {
+    setFlash(req, { type: "error", message: error.message || "Verifikasi OTP gagal." });
+  }
+  return req.session.save(() => res.redirect("/konsumen/profile"));
+};
+
+exports.linkSmartBankWallet = async (req, res) => {
+  const verificationToken = req.session.smartBankLink?.verificationToken;
+  if (!verificationToken) {
+    setFlash(req, { type: "error", message: "Verifikasi OTP terlebih dahulu." });
+    return res.redirect("/konsumen/profile");
+  }
+  try {
+    await SmartBankConnector.linkUser(req.session.user.id, verificationToken);
+    delete req.session.smartBankLink;
+    setFlash(req, { type: "success", message: "Akun POS berhasil terhubung ke SmartBank Wallet." });
+  } catch (error) {
+    setFlash(req, { type: "error", message: error.message || "Gagal menghubungkan SmartBank Wallet." });
+  }
+  return req.session.save(() => res.redirect("/konsumen/profile"));
 };
 
 exports.updateProfile = async (req, res) => {
@@ -664,6 +727,62 @@ exports.checkout = async (req, res) => {
   }
 
   return res.redirect(redirectUrl);
+};
+
+exports.payWithSmartBank = async (req, res) => {
+  const invoice = String(req.params.invoice || "").trim();
+  const pin = String(req.body.pin || "").trim();
+  if (!/^\d{6}$/.test(pin)) {
+    setFlash(req, { type: "error", message: "PIN SmartBank harus terdiri dari 6 digit." });
+    return res.redirect(`/konsumen/waiting/${encodeURIComponent(invoice)}`);
+  }
+
+  try {
+    const transaction = await TransactionModel.getByInvoiceAndUser(invoice, req.session.user.id);
+    if (!transaction || !["approved", "pending_payment"].includes(transaction.status)) {
+      setFlash(req, { type: "error", message: "Transaksi belum siap dibayar atau tidak ditemukan." });
+      return res.redirect(`/konsumen/waiting/${encodeURIComponent(invoice)}`);
+    }
+
+    const payable = await TransactionModel.validatePayableTransaction(transaction.id);
+    if (!payable.success) {
+      setFlash(req, { type: "error", message: payable.reason === "insufficient_stock" ? `Stock ${payable.productName} tidak mencukupi.` : "Transaksi belum dapat dibayar." });
+      return res.redirect(`/konsumen/waiting/${encodeURIComponent(invoice)}`);
+    }
+
+    let payment = await PaymentModel.getLatestSuccessfulByTransactionId(transaction.id);
+    if (!payment || payment.method !== "smartbank") {
+      const settled = await SmartBankConnector.pay({
+        buyerUserId: req.session.user.id,
+        amount: transaction.grand_total,
+        pin,
+        invoice: transaction.invoice
+      });
+      await PaymentModel.create({
+        transactionId: transaction.id,
+        provider: "smartbank",
+        method: "smartbank",
+        status: "success",
+        amount: transaction.grand_total,
+        paymentRequestId: settled.payment_request_id,
+        providerReference: settled.transaction_id,
+        responseCode: 200,
+        responseBody: JSON.stringify(settled),
+        cashierId: null
+      });
+      payment = settled;
+    }
+
+    const finalized = await TransactionModel.payTransaction({ transactionId: transaction.id, cashierId: null, paymentMethod: "smartbank" });
+    if (!finalized.success) throw new Error("Settlement berhasil tetapi finalisasi transaksi POS tertunda. Silakan ulangi; pembayaran tidak akan didebit dua kali.");
+
+    setFlash(req, { type: "success", message: "Pembayaran SmartBank berhasil dan transaksi sudah selesai." });
+    return res.redirect(`/konsumen/receipt/${encodeURIComponent(invoice)}`);
+  } catch (error) {
+    console.error("Consumer SmartBank payment error:", error);
+    setFlash(req, { type: "error", message: error.message || "Pembayaran SmartBank gagal." });
+    return res.redirect(`/konsumen/waiting/${encodeURIComponent(invoice)}`);
+  }
 };
 
 exports.waitingApproval = async (req, res) => {

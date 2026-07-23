@@ -15,6 +15,9 @@ const errorController = require("./controllers/errorController");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SESSION_MAX_AGE = 30 * 60 * 1000;
+if (!process.env.SESSION_SECRET && process.env.NODE_ENV === "production") {
+  throw new Error("SESSION_SECRET must be set in production");
+}
 
 app.set("view engine", "ejs");
 app.use(helmet({
@@ -33,7 +36,7 @@ app.use(sanitizeInput);
 app.use(express.static("public"));
 
 app.use(session({
-  secret: "warungpossecret",
+  secret: process.env.SESSION_SECRET || "warungpossecret",
   resave: false,
   saveUninitialized: false,
   cookie: {

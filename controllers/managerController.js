@@ -1,6 +1,7 @@
 const TransactionModel = require("../models/transactionModel");
 const ApiIntegrationModel = require("../models/apiIntegrationModel");
 const PaymentModel = require("../models/paymentModel");
+const SmartBankConnector = require("../services/smartBankConnectorClient");
 const { callExternalIntegration } = require("../services/apiIntegrationClient");
 const { createObjectCsvStringifier } = require("csv-writer");
 const PDFDocument = require("pdfkit");
@@ -144,6 +145,92 @@ const redirectProvider = (providerKey) => `/manager/api-integrator/${providerKey
 
 const setFlash = (req, payload) => {
   req.session.flash = payload;
+};
+
+const getMerchantExternalId = () => String(process.env.SMARTBANK_POS_SELLER_EXTERNAL_ID || "").trim();
+
+exports.smartBankWallet = async (req, res) => {
+  const externalId = getMerchantExternalId();
+  const linkSession = req.session.smartBankMerchantLink || {};
+  let merchantWallet = {
+    externalId,
+    linked: false,
+    requestId: linkSession.requestId || null,
+    otpVerified: Boolean(linkSession.verificationToken),
+  };
+
+  if (!externalId) {
+    merchantWallet.error = "SMARTBANK_POS_SELLER_EXTERNAL_ID belum dikonfigurasi.";
+  } else {
+    try {
+      const linkage = await SmartBankConnector.getLinkageByExternalId(externalId);
+      merchantWallet = { externalId, linked: true, walletId: linkage.smartbank_wallet_id };
+      delete req.session.smartBankMerchantLink;
+    } catch (error) {
+      if (error.code !== "USER_NOT_LINKED" && error.code !== "CONNECTOR_NOT_CONFIGURED") {
+        merchantWallet.error = error.message;
+      }
+    }
+  }
+
+  return res.render("manager/smartbank-wallet", {
+    pageTitle: "Wallet Toko SmartBank",
+    merchantWallet,
+  });
+};
+
+exports.requestSmartBankMerchantOtp = async (req, res) => {
+  const externalId = getMerchantExternalId();
+  const phone = String(req.body.phone || "").trim();
+  if (!externalId || !phone) {
+    setFlash(req, { type: "error", message: "ID merchant atau nomor SmartBank belum diisi." });
+    return res.redirect("/manager/smartbank-wallet");
+  }
+
+  try {
+    const result = await SmartBankConnector.requestLinkOtp(phone, `merchant-${req.session.user.id}`);
+    req.session.smartBankMerchantLink = { requestId: result.request_id, phone };
+    setFlash(req, { type: "success", message: "OTP dikirim ke Inbox SmartBank pemilik toko." });
+  } catch (error) {
+    setFlash(req, { type: "error", message: error.message || "Gagal meminta OTP SmartBank." });
+  }
+  return req.session.save(() => res.redirect("/manager/smartbank-wallet"));
+};
+
+exports.verifySmartBankMerchantOtp = async (req, res) => {
+  const requestId = req.session.smartBankMerchantLink?.requestId;
+  const code = String(req.body.code || "").trim();
+  if (!requestId || !/^\d{6}$/.test(code)) {
+    setFlash(req, { type: "error", message: "Request OTP tidak tersedia atau kode OTP tidak valid." });
+    return res.redirect("/manager/smartbank-wallet");
+  }
+
+  try {
+    const result = await SmartBankConnector.verifyLinkOtp(requestId, code, `merchant-${req.session.user.id}`);
+    req.session.smartBankMerchantLink.verificationToken = result.verification_token;
+    setFlash(req, { type: "success", message: "OTP valid. Konfirmasi untuk menetapkan wallet penerima toko." });
+  } catch (error) {
+    setFlash(req, { type: "error", message: error.message || "Verifikasi OTP gagal." });
+  }
+  return req.session.save(() => res.redirect("/manager/smartbank-wallet"));
+};
+
+exports.linkSmartBankMerchantWallet = async (req, res) => {
+  const externalId = getMerchantExternalId();
+  const verificationToken = req.session.smartBankMerchantLink?.verificationToken;
+  if (!externalId || !verificationToken) {
+    setFlash(req, { type: "error", message: "Verifikasi OTP terlebih dahulu." });
+    return res.redirect("/manager/smartbank-wallet");
+  }
+
+  try {
+    await SmartBankConnector.linkExternalUser(externalId, verificationToken);
+    delete req.session.smartBankMerchantLink;
+    setFlash(req, { type: "success", message: "Wallet SmartBank pemilik toko berhasil ditautkan sebagai penerima pembayaran POS." });
+  } catch (error) {
+    setFlash(req, { type: "error", message: error.message || "Gagal menautkan wallet toko." });
+  }
+  return req.session.save(() => res.redirect("/manager/smartbank-wallet"));
 };
 
 const parseStoredJson = (value, fallback) => {
