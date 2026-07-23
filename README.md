@@ -564,9 +564,47 @@ warungpos/
 
 ---
 
-## 10. API Integrator dan SmartBank
+## 10. API Integrator dan SmartBank Connector
 
-Manager dapat membuka:
+Pembayaran SmartBank memakai service Connector resmi pada port `5000`. API key disimpan hanya di server POS; browser tidak pernah menerima API key. Konsumen menghubungkan akun dari **Profil → SmartBank Wallet**, membaca OTP di Inbox SmartBank, lalu mengotorisasi pembayaran sendiri dari halaman status pesanan menggunakan PIN transaksi.
+
+Konfigurasi yang dibutuhkan:
+
+```env
+SMARTBANK_CONNECTOR_URL=http://localhost:5000
+SMARTBANK_CONNECTOR_API_KEY=sbk_xxx
+SMARTBANK_POS_SELLER_EXTERNAL_ID=pos-merchant-main
+```
+
+Untuk setup lengkap Connector lokal maupun Docker, lihat [`SmartBank/Connector/CONNECTOR_SETUP.md`](../SmartBank/Connector/CONNECTOR_SETUP.md).
+
+Pada mode lokal, buat API key khusus POS dari folder `SmartBank/Connector`:
+
+```powershell
+npm run seed:service-key -- WARUNGPOS "WarungPOS"
+```
+
+Simpan key yang ditampilkan sekali saja sebagai `SMARTBANK_CONNECTOR_API_KEY` pada `POS/.env`. Jangan gunakan `CONNECTOR_ADMIN_KEY` sebagai key POS.
+
+Link wallet merchant/seller satu kali:
+
+```bash
+npm run smartbank:seller:request -- +6281234567890 pos-merchant-main
+# baca OTP di Inbox SmartBank pemilik merchant
+npm run smartbank:seller:link -- <request-id> <otp-6-digit> pos-merchant-main
+```
+
+Set `SMARTBANK_POS_SELLER_EXTERNAL_ID=pos-merchant-main` setelah linkage berhasil.
+
+Manager dapat menautkan wallet penerima toko dari UI:
+
+```txt
+http://localhost:3002/manager/smartbank-wallet
+```
+
+Konsumen menautkan wallet dari **Profil**, lalu membayar dengan PIN SmartBank dari halaman status pesanan. Kasir hanya memverifikasi settlement yang sudah sukses.
+
+Manager juga dapat membuka:
 
 ```txt
 http://localhost:3000/manager/api-integrator
@@ -578,24 +616,7 @@ Fitur API Integrator:
 - Menyediakan halaman provider eksternal: SmartBank, API Gateway, dan UMKM Insight.
 - Menambah, mengubah, menghapus, mengetes, dan mengaktifkan endpoint eksternal.
 - Menyimpan status endpoint: `untested`, `ok`, atau `failed`.
-- Endpoint SmartBank yang aktif dipakai ketika kasir membayar transaksi dengan metode `SmartBank`.
-
-Konfigurasi SmartBank di `.env` POS:
-
-```env
-SMARTBANK_BASE_URL=http://localhost:4000
-SMARTBANK_TOKEN=
-SMARTBANK_PAYER_WALLET_ID=
-SMARTBANK_PAYEE_WALLET_ID=
-```
-
-Contoh endpoint SmartBank yang sudah disiapkan:
-
-```txt
-POST http://localhost:4000/api/bank/payment-requests
-```
-
-Endpoint tersebut membutuhkan SmartBank Gateway hidup di port `4000`, token SmartBank valid, serta wallet ID payer dan payee yang benar.
+- Konfigurasi provider generik tetap tersedia untuk pengujian, tetapi pembayaran SmartBank selalu memakai Connector resmi agar linkage, PIN, audit, dan idempotensi tidak dapat dilewati.
 
 ---
 
@@ -610,7 +631,7 @@ Endpoint tersebut membutuhkan SmartBank Gateway hidup di port `4000`, token Smar
 - [x] Pengurangan stok otomatis saat transaksi `paid`.
 - [x] API Integrator untuk endpoint lokal dan eksternal.
 - [x] Test health endpoint dan endpoint eksternal.
-- [x] Pembayaran SmartBank memakai endpoint aktif dari API Integrator.
+- [x] Pembayaran SmartBank memakai Connector resmi dengan linkage pengguna dan PIN.
 - [x] Middleware keamanan: Helmet, rate limit, sanitasi input, session timeout, dan error pages.
 - [x] Dokumentasi workflow, database, route, instalasi, dan struktur folder.
 
